@@ -1,0 +1,30 @@
+{
+  "name": "@[repo]/monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "format": "prettier --write '**/*.{ts,js,mjs}'",
+    "release": "bumpp package.json packages/*/package.json --commit --push --tag",
+    "test:ci": "turbo run test:ci",
+    "typecheck": "turbo run typecheck",
+    "preversion": "turbo run test:ci"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.5",
+    "bumpp": "latest",
+    "prettier": "^3.9.5",
+    "tsdown": "^0.22.8",
+    "tsx": "^4.23.1",
+    "turbo": "^2.10.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  },
+  "packageManager": "pnpm@11.13.1",
+  "engines": {
+    "node": ">=v24.0.0"
+  }
+}
