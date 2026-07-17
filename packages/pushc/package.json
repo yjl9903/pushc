@@ -23,6 +23,9 @@
   },
   "module": "dist/index.mjs",
   "types": "dist/index.d.mts",
+  "bin": {
+    "pushc": "cli.mjs"
+  },
   "files": [
     "dist"
   ],
@@ -31,6 +34,11 @@
     "test": "vitest",
     "test:ci": "vitest --run",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "breadc": "1.0.0-beta.17",
+    "dotenv": "17.4.2",
+    "smol-toml": "1.7.0"
   },
   "engines": {
     "node": ">=v24.0.0"
