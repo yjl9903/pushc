@@ -1,15 +1,15 @@
 {
-  "name": "chatc",
+  "name": "pushc",
   "version": "0.0.0",
   "description": "",
   "keywords": [],
-  "homepage": "https://github.com/yjl9903/chatc#readme",
+  "homepage": "https://github.com/yjl9903/pushc#readme",
   "bugs": {
-    "url": "https://github.com/yjl9903/chatc/issues"
+    "url": "https://github.com/yjl9903/pushc/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yjl9903/chatc.git"
+    "url": "git+https://github.com/yjl9903/pushc.git"
   },
   "license": "MIT",
   "author": "XLor",
