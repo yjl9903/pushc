@@ -1,18 +1,18 @@
 {
-  "name": "[repo]",
+  "name": "chatc",
   "version": "0.0.0",
   "description": "",
   "keywords": [],
-  "homepage": "https://github.com/[actor]/[repo]#readme",
+  "homepage": "https://github.com/yjl9903/chatc#readme",
   "bugs": {
-    "url": "https://github.com/[actor]/[repo]/issues"
+    "url": "https://github.com/yjl9903/chatc/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/[actor]/[repo].git"
+    "url": "git+https://github.com/yjl9903/chatc.git"
   },
   "license": "MIT",
-  "author": "[username]",
+  "author": "XLor",
   "sideEffects": false,
   "type": "module",
   "exports": {
