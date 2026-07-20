@@ -1,0 +1,56 @@
+{
+  "name": "pushc",
+  "version": "0.0.0",
+  "description": "Pushing any messages to anywhere",
+  "keywords": [
+    "pushc",
+    "cli",
+    "agent",
+    "notification"
+  ],
+  "homepage": "https://github.com/yjl9903/pushc#readme",
+  "bugs": {
+    "url": "https://github.com/yjl9903/pushc/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjl9903/pushc.git",
+    "directory": "apps/pushc"
+  },
+  "license": "MIT",
+  "author": "XLor",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "bin": {
+    "pushc": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "test:ci": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pushc/adapter-napcat": "workspace:*",
+    "@pushc/adapter-webhook": "workspace:*",
+    "@pushc/core": "workspace:*",
+    "breadc": "1.0.0-beta.17",
+    "dotenv": "17.4.2",
+    "smol-toml": "1.7.0"
+  },
+  "engines": {
+    "node": ">=v24.0.0"
+  }
+}

@@ -3,6 +3,7 @@ node_modules
 .pnpm-store
 
 # Environment
+.pushc
 .env
 .env.*
 !.env.example

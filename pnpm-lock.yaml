@@ -36,8 +36,17 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.5)(vite@8.1.4(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
 
-  packages/pushc:
+  apps/pushc:
     dependencies:
+      '@pushc/adapter-napcat':
+        specifier: workspace:*
+        version: link:../../packages/adapter-napcat
+      '@pushc/adapter-webhook':
+        specifier: workspace:*
+        version: link:../../packages/adapter-webhook
+      '@pushc/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       breadc:
         specifier: 1.0.0-beta.17
         version: 1.0.0-beta.17
@@ -47,6 +56,23 @@ importers:
       smol-toml:
         specifier: 1.7.0
         version: 1.7.0
+
+  packages/adapter-napcat:
+    dependencies:
+      '@pushc/core':
+        specifier: workspace:*
+        version: link:../core
+      node-napcat-ts:
+        specifier: ^0.4.25
+        version: 0.4.25
+
+  packages/adapter-webhook:
+    dependencies:
+      '@pushc/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/core: {}
 
 packages:
 
@@ -868,6 +894,11 @@ packages:
     resolution: {integrity: sha512-NkJQA7oZ4YHQhd2+H3BoRFKF3d/XNsiKpHZCQEMH9pDX27hQQLsTyOocyRgaIVtf8gHX3Nt3LPkR4e5EdtPAGQ==}
     engines: {node: ^22.18.0 || >=24.0.0}
 
+  isomorphic-ws@5.0.0:
+    resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
+    peerDependencies:
+      ws: '*'
+
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
@@ -956,6 +987,14 @@ packages:
     resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
+
+  nanoid@5.1.16:
+    resolution: {integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==}
+    engines: {node: ^18 || >=20}
+    hasBin: true
+
+  node-napcat-ts@0.4.25:
+    resolution: {integrity: sha512-Yp/+JNJ65DnCnNJzxVP/kqkRXdDHM4hVM3MLuYvoGFaT3gCclSyuEiZ5tL5ADVrWxWHMtJJaV5yJVSrBsrIR/w==}
 
   obug@2.1.3:
     resolution: {integrity: sha512-9miFgM2OFba7hB+pRgvtV84pYTBaoTHohvmIgiRt6dRIzbwEOIaNaP+dIlGs2fNFoB0SeISs0Jz5WFVRid6Xyg==}
@@ -1211,6 +1250,18 @@ packages:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
     engines: {node: '>=8'}
     hasBin: true
+
+  ws@8.21.1:
+    resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
@@ -1776,6 +1827,10 @@ snapshots:
 
   import-without-cache@0.4.0: {}
 
+  isomorphic-ws@5.0.0(ws@8.21.1):
+    dependencies:
+      ws: 8.21.1
+
   jiti@2.7.0: {}
 
   jsonc-parser@3.3.1: {}
@@ -1834,6 +1889,17 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   nanoid@3.3.15: {}
+
+  nanoid@5.1.16: {}
+
+  node-napcat-ts@0.4.25:
+    dependencies:
+      isomorphic-ws: 5.0.0(ws@8.21.1)
+      nanoid: 5.1.16
+      ws: 8.21.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   obug@2.1.3: {}
 
@@ -2070,6 +2136,8 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  ws@8.21.1: {}
 
   yaml@2.9.0: {}
 

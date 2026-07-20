@@ -1,0 +1,38 @@
+{
+  "name": "@pushc/core",
+  "version": "0.0.0",
+  "description": "Runtime-neutral message push orchestration for pushc",
+  "keywords": [
+    "pushc",
+    "notification",
+    "adapter"
+  ],
+  "homepage": "https://github.com/yjl9903/pushc#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjl9903/pushc.git",
+    "directory": "packages/core"
+  },
+  "license": "MIT",
+  "author": "XLor",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "test:ci": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  }
+}

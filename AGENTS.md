@@ -10,15 +10,15 @@ Keep dependencies flowing from the CLI to adapters to core. Core must not import
 
 `docs/architecture/` is the ground-truth. Before code changes, read relevant architecture, implementation, and tests; resolve mismatches first.
 
-At implementation start, create `docs/plan/<YYMMDD>-<requirement-name>.md`, for example `docs/plan/260718-target-aliases.md`. Capture background and goals, key decisions, and the technical approach.
+Use a plan only when combined implementation size and impact are substantial; small localized changes need none. Reuse and update an existing same-context plan. Create `docs/plan/<YYMMDD>-<requirement-name>.md` only when the topic genuinely changes. Capture background and goals, key decisions, and the technical approach.
 
 Update affected architecture documents with code changes. A task is incomplete while code, tests, and architecture disagree.
 
 ## Change Compatibility & Implementation
 
-The project is in a high-frequency development phase; breaking changes are acceptable. When changes affect historical data or behavior, ask the user whether backward compatibility is required. If it is not required, remove old logic and documentation completely, including compatibility branches and stale abstractions; refactor as needed to keep one simple, direct path.
+The project is in high-frequency development; breaking changes are acceptable. When changes affect historical data or behavior, ask the user whether backward compatibility is required. If not, delete old code, documentation, compatibility branches, and stale abstractions; refactor toward one simple, direct path.
 
-Work from first principles: clarify the real problem, identify the smallest behavior change that solves it, and prefer direct implementation. Avoid speculative extensibility, generic frameworks for one use case, and over-encapsulation that obscures execution flow.
+Use first principles: clarify the real problem, make the smallest sufficient behavior change, and prefer direct implementation. Avoid speculative extensibility, single-use generic frameworks, or over-encapsulation that obscures execution.
 
 ## Build, Test, and Development Commands
 
@@ -38,11 +38,11 @@ Write ESM TypeScript with explicit public types. Prettier uses two spaces, semic
 
 ## Testing Guidelines
 
-Vitest files follow `test/*.test.ts`. Add focused behavior and regression tests. Mock network/platform boundaries; never require live services. Before a pull request, run typecheck, tests, and build. Cover success, validation, and errors.
+Vitest files follow `test/*.test.ts`. Add focused behavior and regression tests. Mock network/platform boundaries; never require live services. Run typecheck, tests, and build before a pull request; cover success, validation, and errors.
 
 ## Commit & Pull Request Guidelines
 
-Use focused, imperative Conventional Commits, such as `feat: add target aliases`. Pull requests explain behavior, affected workspaces, linked issues, and configuration impact; include CLI output or screenshots for visible changes and ensure CI passes.
+Use focused, imperative Conventional Commits, such as `feat: add target aliases`. Pull requests explain behavior, affected workspaces, issues, and configuration impact; show visible changes and ensure CI passes.
 
 ## Security & Configuration
 

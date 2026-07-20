@@ -1,0 +1,42 @@
+{
+  "name": "@pushc/adapter-webhook",
+  "version": "0.0.0",
+  "description": "HTTP webhook adapter for pushc",
+  "keywords": [
+    "pushc",
+    "pushc-adapter",
+    "webhook",
+    "notification"
+  ],
+  "homepage": "https://github.com/yjl9903/pushc#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjl9903/pushc.git",
+    "directory": "packages/adapter-webhook"
+  },
+  "license": "MIT",
+  "author": "XLor",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "test:ci": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pushc/core": "workspace:*"
+  }
+}

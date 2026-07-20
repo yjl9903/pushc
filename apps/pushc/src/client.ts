@@ -1,0 +1,58 @@
+import { NapCatAdapter } from '@pushc/adapter-napcat';
+import { WebhookAdapter } from '@pushc/adapter-webhook';
+import { PushClient, PushError, type AnyPushAdapter } from '@pushc/core';
+
+import { errorMessage } from './utils/error.js';
+import { loadConfig, parsePushConfig } from './config.js';
+
+export async function makePushClient(configFilePath: string): Promise<PushClient> {
+  const loaded = await loadConfig({ path: configFilePath });
+  const config = parsePushConfig(loaded.config);
+  const client = new PushClient();
+
+  for (const [name, definition] of Object.entries(config.adapters)) {
+    let adapter: AnyPushAdapter | undefined;
+    try {
+      switch (definition.type) {
+        case 'webhook': {
+          adapter = new WebhookAdapter(definition.options);
+          break;
+        }
+        case 'napcat': {
+          adapter = new NapCatAdapter(definition.options);
+          break;
+        }
+        default: {
+          throw new PushError(
+            'UNKNOWN_ADAPTER',
+            `Adapter implementation "${definition.type}" is not supported.`
+          );
+        }
+      }
+
+      const targets = Object.entries(definition.targets);
+      if (targets.length === 0) {
+        adapter.targets.resolve();
+      } else {
+        for (const [targetName, partial] of targets) {
+          adapter.targets.register(targetName, partial);
+        }
+      }
+      await adapter.initialize?.();
+      client.adapters.register(name, adapter);
+    } catch (error) {
+      await adapter?.destroy?.().catch(() => undefined);
+      await client.destroy().catch(() => undefined);
+      if (error instanceof PushError && error.code === 'UNKNOWN_ADAPTER') {
+        throw error;
+      }
+      throw new PushError(
+        'INVALID_CONFIG',
+        `Invalid configuration for adapter "${name}": ${errorMessage(error)}`,
+        { cause: error }
+      );
+    }
+  }
+
+  return client;
+}

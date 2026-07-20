@@ -1,15 +1,19 @@
 {
-  "name": "pushc",
+  "name": "@pushc/adapter-napcat",
   "version": "0.0.0",
-  "description": "",
-  "keywords": [],
+  "description": "NapCat QQ adapter for pushc",
+  "keywords": [
+    "pushc",
+    "pushc-adapter",
+    "napcat",
+    "qq",
+    "notification"
+  ],
   "homepage": "https://github.com/yjl9903/pushc#readme",
-  "bugs": {
-    "url": "https://github.com/yjl9903/pushc/issues"
-  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yjl9903/pushc.git"
+    "url": "git+https://github.com/yjl9903/pushc.git",
+    "directory": "packages/adapter-napcat"
   },
   "license": "MIT",
   "author": "XLor",
@@ -23,22 +27,19 @@
   },
   "module": "dist/index.mjs",
   "types": "dist/index.d.mts",
-  "bin": {
-    "pushc": "cli.mjs"
-  },
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsdown",
+    "dev": "tsdown --watch",
     "test": "vitest",
     "test:ci": "vitest --run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "breadc": "1.0.0-beta.17",
-    "dotenv": "17.4.2",
-    "smol-toml": "1.7.0"
+    "@pushc/core": "workspace:*",
+    "node-napcat-ts": "^0.4.25"
   },
   "engines": {
     "node": ">=v24.0.0"
