@@ -44,6 +44,12 @@ group_id = "123456"
 
 `.env` 优先级、消息参数/文件/stdin、JSON 错误和退出码保持现有行为。
 
+## Agent Skill
+
+面向终端用户的 `pushc` Skill 位于仓库根目录 `skills/pushc`，不随 npm 包发布。
+`SKILL.md` 只保留安装/版本/连通性前序检查、按需配置和命令摘要；完整配置 schema 与 CLI
+行为分别放在 `reference/configuration.md` 和 `reference/cli.md`，由 agent 按任务需要加载。
+
 ## 测试边界
 
 Vitest 覆盖配置 schema、名称限制、target 装配与原子失败、地址解析、必填 `--target`、default/具名查找、结构化列表、密钥隐藏和构建后 CLI smoke test。
