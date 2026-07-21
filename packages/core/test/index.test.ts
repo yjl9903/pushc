@@ -251,6 +251,26 @@ describe('PushClient', () => {
     expect(send).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ['SDK response object', { status: 'failed', retcode: 1200, message: 'risk control' }],
+    ['string rejection', 'socket closed']
+  ])('preserves the message from a %s', async (_label, failure) => {
+    const adapter = new MemoryAdapter(
+      '#',
+      {},
+      { send: vi.fn(async () => Promise.reject(failure)) }
+    );
+    const client = namedClient(adapter);
+
+    await expect(
+      client.send({ adapter: 'memory', target: 'ops', message: { content: 'hello' } })
+    ).rejects.toMatchObject({
+      code: 'SEND_FAILED',
+      message: expect.stringContaining(typeof failure === 'string' ? failure : failure.message),
+      cause: failure
+    });
+  });
+
   it('destroys every adapter once and rejects sends after destruction', async () => {
     const firstDestroy = vi.fn(async () => undefined);
     const secondDestroy = vi.fn(async () => undefined);

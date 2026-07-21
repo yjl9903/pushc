@@ -40,7 +40,10 @@ client 与 adapter 的发送输入都支持三种 target 形式：省略时调�
 4. concrete adapter 的 `sendTarget` 执行平台发送。
 5. 返回 `{ adapter, target?, receipt }`；只有具名字符串 target 会出现在结果中。
 
-普通发送异常包装为 `SEND_FAILED`；adapter 主动抛出的 `PushError` 原样透传。名称统一匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`。
+普通发送异常包装为 `SEND_FAILED`；错误文本支持原生 `Error`、字符串以及带非空字符串
+`message` 的 SDK 响应对象，无法提取文本时才回退为 `Unknown error`，原始异常保留为
+`cause`。adapter 主动抛出的 `PushError` 原样透传。名称统一匹配
+`[A-Za-z0-9][A-Za-z0-9_-]*`。
 
 `PushClient.destroy()` 是幂等终止操作：并行调用所有已注册 adapter 的可选 `destroy` hook，并禁止后续发送。组合层在 adapter 完整注册前调用可选 `initialize` hook；初始化中途失败时销毁已经创建的资源。
 
