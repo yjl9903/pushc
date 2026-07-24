@@ -1,4 +1,4 @@
-import { PushAdapter, type AdapterSendContext } from '@pushc/core';
+import { PushAdapter, type PushPayload, type PushSendOptions } from '@pushc/core';
 
 import type {
   CreateNapCatAdapterOptions,
@@ -29,9 +29,13 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
     });
   }
 
-  protected async sendTarget({ target, message, signal }: AdapterSendContext<NapCatTargetConfig>) {
+  protected async sendTarget(
+    target: NapCatTargetConfig,
+    payload: PushPayload,
+    options: Readonly<PushSendOptions>
+  ) {
     const operation = createOperationSignal(
-      [signal, this.#connection.destroySignal],
+      [options.signal, this.#connection.destroySignal],
       this.config.timeout_ms
     );
     try {
@@ -45,7 +49,7 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
           ...('user_id' in target
             ? { user_id: Number(target.user_id) }
             : { group_id: Number(target.group_id) }),
-          message: [{ type: 'text', data: { text: message.content } }]
+          message: [{ type: 'text', data: { text: payload.message } }]
         }),
         operation.signal,
         this.config.timeout_ms

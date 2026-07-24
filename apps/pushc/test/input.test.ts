@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveMessage } from '../src/input.js';
+import { parseParamEntries, resolveMessage } from '../src/input.js';
 
 const directories: string[] = [];
 
@@ -41,3 +41,62 @@ describe('resolveMessage', () => {
     });
   });
 });
+
+describe('parseParamEntries', () => {
+  it('splits on the first equals and preserves empty and whitespace values', () => {
+    expect(parseParamEntries(['group=deployments', 'query=a=b', 'empty=', 'space= ']))
+      .toMatchInlineSnapshot(`
+      {
+        "empty": "",
+        "group": "deployments",
+        "query": "a=b",
+        "space": " ",
+      }
+    `);
+    expect(parseParamEntries([])).toBeUndefined();
+  });
+
+  it('rejects invalid entries', () => {
+    const invalidEntries = [['missing'], ['=empty'], ['bad key=value'], ['same=one', 'same=two']];
+
+    expect(invalidEntries.map((entries) => captureError(() => parseParamEntries(entries))))
+      .toMatchInlineSnapshot(`
+        [
+          {
+            "code": "CLI_USAGE",
+            "message": "--param entries must use key=value with keys containing only letters, digits, _, . or -.",
+            "name": "CliUsageError",
+          },
+          {
+            "code": "CLI_USAGE",
+            "message": "--param entries must use key=value with keys containing only letters, digits, _, . or -.",
+            "name": "CliUsageError",
+          },
+          {
+            "code": "CLI_USAGE",
+            "message": "--param entries must use key=value with keys containing only letters, digits, _, . or -.",
+            "name": "CliUsageError",
+          },
+          {
+            "code": "CLI_USAGE",
+            "message": "Duplicate --param key "same".",
+            "name": "CliUsageError",
+          },
+        ]
+      `);
+  });
+});
+
+function captureError(callback: () => unknown): unknown {
+  try {
+    callback();
+  } catch (error) {
+    if (!(error instanceof Error)) return error;
+    return {
+      name: error.name,
+      ...('code' in error ? { code: error.code } : {}),
+      message: error.message
+    };
+  }
+  throw new Error('Expected callback to throw.');
+}

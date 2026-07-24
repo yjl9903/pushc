@@ -26,10 +26,20 @@ describe('built CLI', () => {
 
     expect(result.status).toBe(2);
     expect(result.stdout).toBe('');
-    expect(JSON.parse(result.stderr)).toMatchObject({
-      ok: false,
-      error: { code: 'CONFIG_NOT_FOUND' }
-    });
+    expect(JSON.parse(result.stderr)).toMatchInlineSnapshot(
+      {
+        error: { message: expect.any(String) }
+      },
+      `
+      {
+        "error": {
+          "code": "CONFIG_NOT_FOUND",
+          "message": Any<String>,
+        },
+        "ok": false,
+      }
+    `
+    );
   });
 
   it('requires the target option inside the send action', () => {
@@ -40,10 +50,15 @@ describe('built CLI', () => {
 
     expect(result.status).toBe(2);
     expect(result.stdout).toBe('');
-    expect(JSON.parse(result.stderr)).toMatchObject({
-      ok: false,
-      error: { code: 'INVALID_TARGET' }
-    });
+    expect(JSON.parse(result.stderr)).toMatchInlineSnapshot(`
+      {
+        "error": {
+          "code": "INVALID_TARGET",
+          "message": "The --target option is required.",
+        },
+        "ok": false,
+      }
+    `);
   });
 
   it('registers the targets command at the executable entry', async () => {
@@ -61,10 +76,20 @@ describe('built CLI', () => {
       });
 
       expect(result.status).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual({
-        ok: true,
-        targets: [{ adapter: 'qq', target: 'ops' }, { adapter: 'webhook' }]
-      });
+      expect(JSON.parse(result.stdout)).toMatchInlineSnapshot(`
+        {
+          "ok": true,
+          "targets": [
+            {
+              "adapter": "qq",
+              "target": "ops",
+            },
+            {
+              "adapter": "webhook",
+            },
+          ],
+        }
+      `);
       expect(result.stdout).not.toContain('example.com');
       expect(result.stderr).toBe('');
     } finally {

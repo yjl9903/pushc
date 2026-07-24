@@ -1,9 +1,9 @@
-import type { PushClientSendInput, PushResult } from './types.js';
+import type { PushDestination, PushPayload, PushResult, PushSendOptions } from './types.js';
 
 import { PushError } from './error.js';
 import { PushAdapters } from './adapters.js';
-import { isPushName } from './utils/name.js';
 import { errorMessage } from './utils/error.js';
+import { normalizeDestination } from './utils/destination.js';
 
 export class PushClient {
   readonly adapters: PushAdapters;
@@ -14,26 +14,30 @@ export class PushClient {
     this.adapters = new PushAdapters();
   }
 
-  async send({ adapter, target, message, signal }: PushClientSendInput): Promise<PushResult> {
+  async send(
+    destination: PushDestination,
+    payload: PushPayload,
+    options?: PushSendOptions
+  ): Promise<PushResult> {
     if (this.#destroyed) {
       throw new PushError('CLIENT_DESTROYED', 'PushClient has been destroyed.');
     }
-    if (!isPushName(adapter)) {
-      throw new PushError('INVALID_TARGET', 'A valid adapter name is required.');
-    }
-    const selectedAdapter = this.adapters.get(adapter);
+
+    const normalizedDestination = normalizeDestination(destination);
+    const selectedAdapter = this.adapters.get(normalizedDestination.adapter);
     if (!selectedAdapter) {
-      throw new PushError('ADAPTER_NOT_FOUND', `Adapter "${adapter}" is not defined.`);
+      throw new PushError(
+        'ADAPTER_NOT_FOUND',
+        `Adapter "${normalizedDestination.adapter}" is not defined.`
+      );
     }
     try {
-      const receipt = await selectedAdapter.send({
-        message,
-        target,
-        signal
-      });
+      const receipt = await selectedAdapter.send(normalizedDestination.target, payload, options);
       return {
-        adapter,
-        ...(typeof target === 'string' ? { target } : {}),
+        adapter: normalizedDestination.adapter,
+        ...(typeof normalizedDestination.target === 'string'
+          ? { target: normalizedDestination.target }
+          : {}),
         receipt
       };
     } catch (error) {
@@ -42,7 +46,7 @@ export class PushClient {
       }
       throw new PushError(
         'SEND_FAILED',
-        `Adapter "${adapter}" failed to deliver the message: ${errorMessage(error)}`,
+        `Adapter "${normalizedDestination.adapter}" failed to deliver the message: ${errorMessage(error)}`,
         { cause: error }
       );
     }

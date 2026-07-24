@@ -4,7 +4,7 @@ import type { PushTargetInput } from './types.js';
 import { PushError } from './error.js';
 import { isRecord } from './utils/value.js';
 import { errorMessage } from './utils/error.js';
-import { isPushName, validatePushName } from './utils/name.js';
+import { isDestinationName, validateDestinationName } from './utils/destination.js';
 
 type AnyTargetAdapter<TTarget extends object> = PushAdapter<any, TTarget, any>;
 
@@ -25,7 +25,7 @@ export class PushTargets<TTarget extends object> implements Iterable<[string, TT
   }
 
   register(name: string, partial: Readonly<Record<string, unknown>>): this {
-    validatePushName(name, 'Target');
+    validateDestinationName(name, 'Target');
     if (this.#items.has(name)) {
       throw new PushError('DUPLICATE_TARGET', `Target "${name}" is already registered.`);
     }
@@ -33,9 +33,9 @@ export class PushTargets<TTarget extends object> implements Iterable<[string, TT
     return this;
   }
 
-  resolve(input?: PushTargetInput<TTarget>): TTarget {
+  resolve(input?: PushTargetInput): TTarget {
     if (typeof input === 'string') {
-      if (!isPushName(input)) {
+      if (!isDestinationName(input)) {
         throw new PushError(
           'INVALID_TARGET',
           'Target names must use only letters, digits, _ or -.'

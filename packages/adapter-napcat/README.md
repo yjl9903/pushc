@@ -21,14 +21,14 @@ const adapter = new NapCatAdapter({
   access_token: process.env.NAPCAT_TOKEN
 });
 
-await adapter.send({
-  target: {
+await adapter.send(
+  {
     group_id: '123456789'
   },
-  message: {
-    content: 'Build completed'
+  {
+    message: 'Build completed'
   }
-});
+);
 
 await adapter.destroy();
 ```

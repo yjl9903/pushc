@@ -21,21 +21,23 @@ other operations, configure only when necessary, and never expose credentials in
    and npm installation before proceeding. Do not require a particular pushc version unless the task
    names one.
 4. Run `pushc targets --json` (plus `--config <path>` when the user supplied a config) to validate
-   configuration and adapter connectivity and to discover usable destination addresses.
+   configuration and adapter connectivity and to discover usable destinations.
 5. If pushc reports that no config exists, stop the preflight and read
    [reference/configuration.md](reference/configuration.md) completely before helping the user
    create one. If a config exists but is invalid or an adapter cannot connect, use the same reference
    to diagnose it. Never send a test notification unless the user asks for one.
 
-Treat configuration files and adjacent `.env` files as sensitive. Do not print, log, or commit tokens,
-webhook URLs, or other secrets. Prefer environment interpolation for credentials.
+`config.toml` is non-sensitive and may be read and edited. It must contain only placeholders for
+tokens, keys, passwords, credentials, and private webhook URLs. Never read, print, or modify an
+adjacent `.env`; pushc itself may load it at runtime. Prefer environment interpolation for every
+credential.
 
 ## Commands
 
 ### `pushc targets`
 
 Prerequisite: finish the preflight and ensure a configuration exists. Use this command to validate
-the configuration and list available destination addresses before sending.
+the configuration and list available destinations before sending.
 
 ```bash
 pushc targets --json
@@ -45,13 +47,20 @@ Add `--config <path>` only when the user supplies or selects a non-default confi
 
 ### `pushc send`
 
-Prerequisite: know the intended address from `pushc targets`, have non-empty message content, and
+Prerequisite: know the intended destination from `pushc targets`, have non-empty message content, and
 have user intent to perform the external send. Always pass `--target <adapter[:target]>`.
 
 Send a short message:
 
 ```bash
 pushc send --target alerts:release "Build completed"
+```
+
+Add a title and string extension parameters when the configured webhook templates use them:
+
+```bash
+pushc send --target alerts:release --title "Build completed" \
+  --param group=deployments --param level=active "Production deployment succeeded"
 ```
 
 For a longer message, use a UTF-8 file or piped stdin:
@@ -61,8 +70,9 @@ pushc send --target alerts:release --file ./report.txt
 git log -1 | pushc send --target alerts:release
 ```
 
-Do not combine positional content with `--file`. Always provide `--target`; an address without a
-colon selects that adapter's default target and does not select its sole named target.
+Do not combine positional content with `--file`. Always provide `--target`; a destination without a
+colon selects that adapter's default target and does not select its sole named target. `--param`
+entries use `key=value`; do not use title or params to pass secrets.
 
 Read [reference/cli.md](reference/cli.md) when exact command behavior, output schemas, config
 resolution, input rules, exit status, or troubleshooting details matter.

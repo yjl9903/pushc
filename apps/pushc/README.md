@@ -24,14 +24,21 @@ npm install -g pushc
 Example `.pushc/config.toml`:
 
 ```toml
-[adapters.deploy-webhook]
+[adapters.bark]
 type = "webhook"
-url = "https://example.com/hook"
+url = "https://api.day.app/push"
 
-[adapters.deploy-webhook.targets.deploy]
+[adapters.bark.request]
+content_type = "application/json"
 
-[adapters.deploy-webhook.targets.deploy.body]
-text = "{{message}}"
+[adapters.bark.request.body]
+device_key = "${BARK_DEVICE_KEY}"
+body = "{{message}}"
+title = "{{title:-pushc}}"
+group = "{{param.group:-pushc}}"
+level = "active"
+
+[adapters.bark.response]
 
 [adapters.qq]
 type = "napcat"
@@ -44,12 +51,21 @@ group_id = "123456789"
 user_id = "987654321"
 ```
 
+Example `.pushc/.env`:
+
+```dotenv
+BARK_DEVICE_KEY=replace-with-your-bark-device-key
+```
+
 ### Commands
 
 Pass short messages as arguments:
 
 ```bash
-pushc send --target deploy-webhook:deploy "Build completed"
+pushc send --target bark \
+  --title "Build completed" \
+  --param group=releases \
+  "Production deployment succeeded"
 ```
 
 Read a longer message from a UTF-8 file:
@@ -61,7 +77,7 @@ pushc send --target qq:qq-group --file ./report.txt
 Or pipe it through stdin:
 
 ```bash
-git log -1 | pushc send --target deploy-webhook:deploy
+git log -1 | pushc send --target bark
 ```
 
 List configured targets:
@@ -80,18 +96,27 @@ import { WebhookAdapter } from '@pushc/adapter-webhook';
 
 const client = new PushClient();
 
-client.adapters.register('webhook', new WebhookAdapter({ url: 'https://example.com/hook' }));
-
-await client.send({
-  adapter: 'webhook',
-  target: {
-    body: {
-      text: '{{message}}'
+client.adapters.register(
+  'bark',
+  new WebhookAdapter({
+    url: 'https://api.day.app/push',
+    request: {
+      content_type: 'application/json',
+      body: {
+        device_key: process.env.BARK_DEVICE_KEY!,
+        body: '{{message}}',
+        title: '{{title:-pushc}}',
+        group: '{{param.group:-pushc}}',
+        level: 'active'
+      }
     }
-  },
-  message: {
-    content: 'Build completed'
-  }
+  })
+);
+
+await client.send('bark', {
+  title: 'Production',
+  message: 'Build completed',
+  param: { group: 'deployments' }
 });
 
 await client.destroy();

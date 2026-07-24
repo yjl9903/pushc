@@ -22,10 +22,12 @@ describe('CLI errors', () => {
     expect(error.ctx.options.get('json')?.value()).toBe(true);
     expect(unwrapCliError(error)).toBe(cause);
     expect(isJsonCliError(error)).toBe(true);
-    expect(normalizeError(cause)).toEqual({
-      code: 'TARGET_NOT_FOUND',
-      message: 'Target "missing" is not defined.'
-    });
+    expect(normalizeError(cause)).toMatchInlineSnapshot(`
+      {
+        "code": "TARGET_NOT_FOUND",
+        "message": "Target "missing" is not defined.",
+      }
+    `);
     expect(getErrorExitCode(cause)).toBe(2);
   });
 
@@ -34,10 +36,12 @@ describe('CLI errors', () => {
 
     expect(unwrapCliError(error)).toBe(error);
     expect(isJsonCliError(error)).toBe(false);
-    expect(normalizeError(error)).toEqual({
-      code: 'INTERNAL_ERROR',
-      message: 'Could not parse arguments.'
-    });
+    expect(normalizeError(error)).toMatchInlineSnapshot(`
+      {
+        "code": "INTERNAL_ERROR",
+        "message": "Could not parse arguments.",
+      }
+    `);
     expect(getErrorExitCode(error)).toBe(1);
   });
 });

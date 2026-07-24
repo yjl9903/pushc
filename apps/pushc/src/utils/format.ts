@@ -1,6 +1,5 @@
-import type { PushResult } from '@pushc/core';
+import { formatDestination, type PushResult } from '@pushc/core';
 import { getErrorExitCode, isJsonCliError, normalizeError, unwrapCliError } from './error.js';
-import { formatTargetAddress } from './target-address.js';
 import { isRecord } from './value.js';
 
 export interface CliTargetSummary {
@@ -24,7 +23,7 @@ export function formatSuccess(result: PushResult, json: boolean): string {
   } else if (isRecord(result.receipt) && typeof result.receipt.status === 'number') {
     detail = ` (HTTP ${result.receipt.status})`;
   }
-  return `Sent to ${formatTargetAddress(result.adapter, result.target)}${detail}.\n`;
+  return `Sent to ${formatDestination(result.adapter, result.target)}${detail}.\n`;
 }
 
 export function formatTargets(targets: readonly CliTargetSummary[], json: boolean): string {
@@ -35,7 +34,7 @@ export function formatTargets(targets: readonly CliTargetSummary[], json: boolea
     return 'No targets configured.\n';
   }
   return `${targets
-    .map((target) => formatTargetAddress(target.adapter, target.target))
+    .map((target) => formatDestination(target.adapter, target.target))
     .join('\n')}\n`;
 }
 

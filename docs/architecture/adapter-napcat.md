@@ -50,7 +50,8 @@ NapCatAdapter 惰性维护单个 WebSocket client：constructor 与 `initialize`
 
 1. 创建覆盖 lazy connect 和 send 的操作级 timeout，并监听调用方 signal 与 adapter destroy signal。
 2. 获取或惰性建立共享 WebSocket 连接。
-3. target 的 `user_id` 或 `group_id` 直接传给 SDK；消息固定转换为一个 NapCat text segment。
+3. target 的 `user_id` 或 `group_id` 直接传给 SDK；payload 的 `message` 固定转换为一个
+   NapCat text segment，本轮不支持的 `title` 与 `param` 被明确忽略。
 4. 调用 `send_msg`，将返回的 `message_id` 统一转成字符串 receipt `{ messageId }`。
 5. 清理本次 signal/timeout；连接保留给后续发送。
 

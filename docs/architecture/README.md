@@ -4,7 +4,10 @@
 
 ## 系统目标
 
-pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通过 adapter name 与可选 target name 发送文本。每个 adapter 实例保存可复用连接信息并管理自己的 targets；target 是受限的 adapter partial config。系统当前支持通用 HTTP Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊和群聊消息。
+pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通过 destination 发送包含正文、
+可选标题与一层 string param 的 payload。每个 adapter 实例保存可复用连接信息并管理自己的
+targets；target 是 adapter-specific partial config。系统当前支持通用 HTTP Webhook，以及
+通过 NapCat WebSocket 发送 QQ 私聊和群聊消息。
 
 ## 子项目索引
 
@@ -16,7 +19,8 @@ pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通�
 ## 模块边界
 
 - [`packages/core`](./core.md)：运行时无关的消息、target、adapter 和结果类型；负责 adapter registry、adapter 私有 target registry、发送调度和统一错误包装。
-- [`packages/adapter-webhook`](./adapter-webhook.md)：基于标准 `fetch` 的运行时无关 adapter，支持 JSON/文本请求体、`{{message}}` 替换、请求头和超时。
+- [`packages/adapter-webhook`](./adapter-webhook.md)：基于标准 `fetch` 的运行时无关 adapter，
+  支持完整 target 请求覆盖、JSON/文本 serializer、payload 模板、请求头和超时。
 - [`packages/adapter-napcat`](./adapter-napcat.md)：Node.js adapter，管理 NapCat WebSocket 连接、私聊/群聊收件人、超时和发送回执。
 - [`apps/pushc`](./pushc-cli.md)：Node.js CLI 与官方组合层；负责配置路径发现与标准化、异步初始化、TOML 与环境变量、具体 adapter class 构造、消息输入、命令输出和退出码。
 
@@ -27,8 +31,10 @@ pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通�
 1. CLI 根据 cwd 与 `--config`/环境变量找到配置目录或文件，并标准化为配置文件路径。
 2. Node 组合层加载 `.env` 和 TOML，按 `adapters.*.type` 直接构造官方 adapter。
 3. 组合层把嵌套的具名 target partial 注册到对应 `adapter.targets`；没有具名 target 时解析并校验 adapter default，随后把 adapter 注册到 client。
-4. CLI 解析 `--target <adapter[:target]>`，从参数、文件或 stdin 读取消息，并把分离的 adapter/target 与消息交给 client。
-5. client 取得 adapter；adapter 将省略的 target、具名字符串或临时对象解析为具体 target，执行平台发送并返回 receipt。
+4. CLI 从参数、文件或 stdin 读取消息，组合 `--title`/`--param` payload，并把
+   `--target <adapter[:target]>` string 交给 client。
+5. client 解析 destination 并取得 adapter；adapter 校验 payload/options，将省略的 target、
+   具名字符串或临时对象解析为具体 target，执行平台发送并返回 receipt。
 6. core 生成统一 `PushResult`；CLI 将成功结果写入 stdout，将结构化错误写入 stderr，并映射退出码。
 
 ## 架构约束

@@ -1,0 +1,114 @@
+# Copy only the adapters you use into your pushc config.
+# Keep credentials and private endpoints in the adjacent .env file.
+# Non-secret endpoints and destination IDs may be written directly in this file.
+
+# -----------------------------------------------------------------------------
+# Bark
+# -----------------------------------------------------------------------------
+
+[adapters.bark]
+type = "webhook"
+url = "https://api.day.app/push"
+
+[adapters.bark.request]
+method = "POST"
+content_type = "application/json"
+
+[adapters.bark.request.body]
+device_key = "${BARK_DEVICE_KEY}" # Credential; keep outside config.toml.
+body = "{{message}}"
+title = "{{title:-pushc}}"
+group = "{{param.group:-pushc}}"
+level = "active"
+
+[adapters.bark.response]
+
+# -----------------------------------------------------------------------------
+# ntfy
+# -----------------------------------------------------------------------------
+
+[adapters.ntfy]
+type = "webhook"
+url = "${NTFY_URL}" # Not a credential; env only keeps the example reusable.
+
+[adapters.ntfy.request]
+method = "POST"
+content_type = "application/json"
+headers = { Authorization = "Bearer ${NTFY_TOKEN}" } # Token is a credential; keep it in env.
+
+[adapters.ntfy.request.body]
+topic = "${NTFY_TOPIC}" # A private topic can act like a shared secret; prefer env.
+message = "{{message}}"
+title = "{{title:-pushc}}"
+priority = 4
+tags = ["white_check_mark"]
+
+[adapters.ntfy.response]
+
+# -----------------------------------------------------------------------------
+# Gotify
+# -----------------------------------------------------------------------------
+
+[adapters.gotify]
+type = "webhook"
+url = "${GOTIFY_URL}" # May be inline unless its hostname is private information.
+
+[adapters.gotify.request]
+method = "POST"
+content_type = "application/json"
+headers = { X-Gotify-Key = "${GOTIFY_APP_TOKEN}" } # Token is a credential; keep it in env.
+
+[adapters.gotify.request.body]
+message = "{{message}}"
+title = "{{title:-pushc}}"
+priority = 5
+
+[adapters.gotify.request.body.extras."client::display"]
+contentType = "text/plain"
+
+[adapters.gotify.response]
+
+# -----------------------------------------------------------------------------
+# Pushover
+# -----------------------------------------------------------------------------
+
+[adapters.pushover]
+type = "webhook"
+url = "https://api.pushover.net/1/messages.json"
+
+[adapters.pushover.request]
+method = "POST"
+content_type = "application/json"
+
+[adapters.pushover.request.body]
+token = "${PUSHOVER_APP_TOKEN}" # Credential; keep outside config.toml.
+user = "${PUSHOVER_USER_KEY}" # Credential; keep outside config.toml.
+message = "{{message}}"
+title = "{{title:-pushc}}"
+priority = 0
+
+[adapters.pushover.response]
+
+[adapters.pushover.targets.emergency.request.body] # Inherits the default Pushover request above.
+title = "{{title:-pushc emergency}}"
+priority = 2
+retry = 60
+expire = 1800
+
+[adapters.pushover.targets.emergency.response]
+
+# -----------------------------------------------------------------------------
+# NapCat
+# -----------------------------------------------------------------------------
+
+[adapters.qq]
+type = "napcat"
+base_url = "${NAPCAT_BASE_URL}" # Not a credential; a local/public endpoint may be inline.
+access_token = "${NAPCAT_ACCESS_TOKEN}" # Credential; keep outside config.toml.
+timeout_ms = 10000
+
+[adapters.qq.targets.group]
+group_id = "${NAPCAT_GROUP_ID}" # Destination ID, not a credential; a literal value is allowed.
+
+[adapters.qq.targets.friend]
+user_id = "${NAPCAT_USER_ID}" # Destination ID, not a credential; a literal value is allowed.

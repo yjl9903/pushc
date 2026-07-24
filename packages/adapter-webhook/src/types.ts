@@ -1,25 +1,40 @@
-export type WebhookBodyMode = 'json' | 'text';
-
 export type JsonValue =
-  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+  null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
+export interface WebhookRequestConfig {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly content_type?: string;
+  readonly timeout_ms: number;
+  readonly body?: JsonValue;
+}
+
+export type WebhookResponseConfig = Readonly<Record<string, never>>;
 
 export interface WebhookConfig {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  timeout_ms: number;
+  readonly url: string;
+  readonly request: WebhookRequestConfig;
+  readonly response: WebhookResponseConfig;
 }
 
 export interface WebhookTargetConfig {
-  body_mode: WebhookBodyMode;
-  body: JsonValue;
+  readonly request: WebhookRequestConfig;
+  readonly response: WebhookResponseConfig;
+}
+
+export interface WebhookRequest {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Headers;
+  readonly timeout_ms: number;
+  readonly body?: string;
 }
 
 export interface WebhookReceipt {
-  status: number;
-  statusText: string;
+  readonly status: number;
 }
 
 export interface CreateWebhookAdapterOptions {
-  fetch?: typeof globalThis.fetch;
+  readonly fetch?: typeof globalThis.fetch;
 }

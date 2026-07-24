@@ -1,55 +1,47 @@
-# `pushc` CLI 与 Node 组合层
+# `pushc` CLI 与组合层
 
-## 定位与边界
+## 定位
 
-`apps/pushc` 是 Node.js 24+ CLI 和官方 adapter 组合层。它负责配置路径、文件 I/O、TOML 根 schema、环境变量、具体 adapter class 选择、target 装配、CLI 地址、消息输入和输出；core 不理解 TOML 或 `adapter[:target]`。
+`apps/pushc` 负责配置发现、TOML/环境变量展开、adapter 组合、命令行输入与输出。它不实现
+adapter 产品语义。`config.toml` 是可供 agent 阅读和修改的非敏感配置；秘密只通过
+`${ENV_NAME}` 从进程环境或相邻 `.env` 注入。agent 不得读取、输出或修改 `.env`。
 
 ## 配置与初始化
 
-配置根只允许 `adapters`：
+配置从 `--config`、`PUSHC_CONFIG`、项目 `.pushc/config.toml`、XDG 与 home 路径依次发现。
+app 层读取 TOML、由运行时加载相邻 `.env` 并递归展开 `${ENV_NAME}`；core 和 adapters
+不访问文件或环境。
 
-```toml
-[adapters.qq]
-type = "napcat"
-base_url = "ws://127.0.0.1:3001"
+`makePushClient` 构造 adapter、注册具名 target、执行可选 initialize，再注册到 client。
+任一步失败会销毁已创建资源并归一化为稳定配置错误。`targets` 只解析配置、初始化 adapter
+并列出 destination；不构造 webhook request，也不发送测试消息。
 
-[adapters.qq.targets.ops]
-group_id = "123456"
+## `pushc send`
+
+```text
+pushc send --target adapter[:target] \
+  [--title <title>] [--param key=value ...] \
+  [--file <path> | ...content]
 ```
 
-`parsePushConfig` 将每个 adapter 解析为 `{ type, options, targets }`。`options` 是除 `type` 和 `targets` 外的顶层字段；`targets` 是具名 partial tables。adapter 和 target 名称必须匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`。根级额外字段和非法结构返回 `INVALID_CONFIG`。
+`--target` string 原样交给 core client 解析。位置消息、`--file` 与 stdin 的现有优先级和冲突
+规则不变。CLI 构造 `{ message, title?, param? }` payload，并调用
+`client.send(destination, payload)`。
 
-`makePushClient(configFilePath)` 从主配置同目录加载 `.env`，解析 TOML，创建空 client，并对每个 definition：
+`--param [...entry]` 可重复出现。每项按第一个 `=` 分隔，key/value 不 trim；value 可以为空
+或包含更多 `=`。key 必须匹配 `[A-Za-z0-9][A-Za-z0-9_.-]*`，同一次发送中按大小写敏感规则
+拒绝重复 key。缺少 `=`、空/非法 key 或重复 key 为 `CLI_USAGE`，exit 2。param 只产生一层
+string Record，不解析 JSON 或创建嵌套结构。
 
-1. 按 `type` 直接调用具体 adapter constructor，传入 `options`。
-2. 若存在具名 targets，逐个调用 `adapter.targets.register`；否则解析一次 adapter default 以验证配置，但不注册或缓存。
-3. target 校验完成后调用 adapter 的可选 `initialize` hook，再调用 `client.adapters.register`。
-4. 任一 adapter 初始化失败时调用当前 adapter 及 client 的 `destroy`，避免遗留部分资源。
+## 输出与错误
 
-`findConfigPath` 按以下顺序发现配置：显式 `--config`、`PUSHC_CONFIG`、
-`<cwd>/.pushc/config.toml`、`$XDG_CONFIG_HOME/pushc/config.toml`、
-`~/.config/pushc/config.toml`。显式选项和环境变量仍可指向配置文件或包含
-`config.toml` 的目录；自动发现路径只接受对应的常规文件。
-
-## CLI 地址与输出
-
-发送命令为 `pushc send [...content] --target <adapter[:target]>`。`--target` 必填；地址只能包含一个可选冒号，两段分别应用公共名称规则。省略冒号表示匿名 default，不会回退到唯一具名 target。
-
-`pushc targets` 遍历 `client.adapters` 及每个 `adapter.targets`。JSON 列表项仅为
-`{ adapter, target? }`；JSON 发送结果直接使用 core 的 `PushResult` 字段并增加
-`ok`，不重复返回拼接后的目标字符串。普通文本将 adapter 与可选 target 格式化为
-`adapter[:target]`，并只附带非敏感 receipt 摘要，不读取 URL、token 或 target options。
-
-每个 sub-command action 都在 `finally` 中调用 `client.destroy()`，确保 NapCat 等持久连接不会阻止 CLI 进程退出。库调用方通过 `makePushClient` 获得 client 后自行负责 destroy。
-
-`.env` 优先级、消息参数/文件/stdin、JSON 错误和退出码保持现有行为。
-
-## Agent Skill
-
-面向终端用户的 `pushc` Skill 位于仓库根目录 `skills/pushc`，不随 npm 包发布。
-`SKILL.md` 只保留安装/版本/连通性前序检查、按需配置和命令摘要；完整配置 schema 与 CLI
-行为分别放在 `reference/configuration.md` 和 `reference/cli.md`，由 agent 按任务需要加载。
+成功 text/JSON output 的外层格式保持现状；webhook receipt 为 `{ status }`，NapCat receipt
+为 `{ messageId }`。配置、destination、payload、options 与 CLI usage 错误 exit 2；实际发送
+失败 exit 1。错误输出不展示 resolved adapter/target 配置或秘密。destination 展示统一使用
+core 的 `formatDestination`；CLI 不维护独立的 destination parser 或 formatter。每次命令在
+成功和失败路径都销毁 client。
 
 ## 测试边界
 
-Vitest 覆盖配置 schema、名称限制、target 装配与原子失败、地址解析、必填 `--target`、default/具名查找、结构化列表、密钥隐藏和构建后 CLI smoke test。
+测试覆盖配置发现与展开、adapter lifecycle、消息来源、`--title`/`--param` parsing、core
+destination 委托、targets 无发送边界、text/JSON output 和 exit status。

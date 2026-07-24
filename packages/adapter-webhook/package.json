@@ -1,7 +1,7 @@
 {
   "name": "@pushc/adapter-webhook",
   "version": "0.0.0",
-  "description": "HTTP webhook adapter for pushc",
+  "description": "Universal HTTP webhook adapter for pushc",
   "keywords": [
     "pushc",
     "pushc-adapter",
@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pushc/core": "workspace:*"
+    "@pushc/core": "workspace:*",
+    "zod": "^4.4.3"
   }
 }

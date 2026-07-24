@@ -2,51 +2,87 @@
 
 ## 定位与依赖
 
-`packages/core` 是运行时无关的消息编排内核，没有运行时依赖。它定义 adapter 接入契约、adapter registry、adapter 私有 target registry 和发送调度。它不读取配置文件、不定义 TOML schema，也不认识具体平台或 adapter type。
+`packages/core` 是运行时无关的消息编排内核。它依赖 Zod 完成公共发送边界校验，但不依赖
+Node API、TOML parser、platform SDK 或任何 concrete adapter。它定义 adapter 接入契约、
+adapter registry、adapter 私有 target registry 和发送调度。
 
-## 源码职责
+## 公共发送模型
 
-| 文件 | 职责 |
-| --- | --- |
-| `src/client.ts` | 无参数构造的 `PushClient`、adapter 选择、结果组装与错误归一化。 |
-| `src/adapters.ts` | client 所属的 `PushAdapters` Map-like registry。 |
-| `src/targets.ts` | adapter 所属的 `PushTargets`、partial 合并、注册模式与解析。 |
-| `src/adapter.ts` | 保存连接配置并持有 targets 的 `PushAdapter` 抽象基类。 |
-| `src/error.ts` | `PushError` 与 core 错误码。 |
-| `src/types.ts` | 消息、发送上下文、结果和 client input。 |
-| `src/utils/*` | 无副作用的名称、错误和值类型工具。 |
+正文、公共消息字段与发送控制分离：
+
+```ts
+interface PushPayload {
+  readonly message: string;
+  readonly title?: string;
+  readonly param?: Readonly<Record<string, string>>;
+}
+
+interface PushSendOptions {
+  readonly signal?: AbortSignal;
+}
+
+type PushTargetInput = string | Readonly<Record<string, unknown>>;
+type PushDestination =
+  | string
+  | { readonly adapter: string; readonly target?: PushTargetInput };
+```
+
+adapter 使用 `send(target, payload, options?)`；client 使用
+`send(destination, payload, options?)`。string destination 格式为 `adapter[:target]`，只允许
+零个或一个冒号。object destination 为 strict object，target 可以是具名 string 或临时配置
+object。
+
+payload 为 strict object。`message` 必须是 trim 后非空的 string，但保留原始内容；`title`
+为可选 string，空 string 合法；`param` 为可选 plain object，value 全部为 string，key 匹配
+`[A-Za-z0-9][A-Za-z0-9_.-]*`。归一化后的非空 param 是冻结的 null-prototype copy，缺省
+param 保持 `undefined`。payload 错误为 `INVALID_MESSAGE`。
+
+options 为 strict object。signal 使用 runtime-neutral shape guard 校验 `aborted`、
+`addEventListener` 和 `removeEventListener`，保持原 identity；options 错误为
+`INVALID_SEND_OPTIONS`。payload/options 校验后立即检查预取消 signal，失败为
+`SEND_FAILED`，且不得继续解析 target。
 
 ## Adapter 与 Target 契约
 
-`PushAdapter<TConfig, TTarget, TReceipt>` 的 constructor 只接收已解析连接配置。实例公开只读 `config` 与 `targets`。base class 的公共 `send(input)` 统一解析 target 并校验消息；concrete adapter 实现 `parseTarget(input)` 与受保护的 `sendTarget(context)`，并可选实现异步 `initialize()` 与 `destroy()` lifecycle hooks。
+`PushAdapter<TConfig, TTarget, TReceipt>` 保存只读 `config` 与 `targets`。base class 的公共
+`send(target, payload, options?)` 完成公共 input normalization，然后调用：
 
-`PushTargets<TTarget>` 持有所属 adapter，但不理解 target schema、默认字段或允许覆盖字段。registry 只保存具名 target；`register(name, partial)` 将 partial 原样交给 adapter 的 `parseTarget`。每个 concrete adapter 自行完成允许字段校验、顶层默认值浅合并和最终解析。同名注册返回 `DUPLICATE_TARGET`。
+```ts
+protected abstract sendTarget(
+  target: TTarget,
+  payload: PushPayload,
+  options: Readonly<PushSendOptions>
+): Promise<TReceipt>;
+```
 
-registry 提供 `size`、`get(name)`、`has(name)`、`delete(name)`、`clear`、`keys`、`values`、`entries`、`forEach` 和迭代器。default 与临时 target 不进入 registry；删除或清空具名 target 不影响 adapter 从顶层默认字段生成 default。
+三个参数分别是 resolved `target`、normalized `payload` 和 normalized `options`，与公共
+send 的语义顺序一致。concrete adapter 实现 `parseTarget(input)`，负责 adapter default、
+partial merge 和 adapter-specific 校验。
 
-`PushAdapters.delete(name)` 与 `clear()` 是异步资源操作：先从 registry 移除实例，再等待对应 adapter 的可选 `destroy` hook。`clear()` 并行销毁快照中的全部 adapter；两者均将销毁失败归一化为 `DESTROY_FAILED`。`PushTargets` 不持有独立资源，其删除 API 保持同步。
+`PushTargets<TTarget>` 不从 resolved target 类型推导 input 类型。`register(name, input)`
+只接受普通 readonly Record，交给 adapter `parseTarget` 后保存 resolved target。省略 target
+使用 default；string 查找具名 target；Record 解析为不注册、不缓存的临时 target。registry
+保持 Map-like API，同名注册返回 `DUPLICATE_TARGET`。
 
-## Client 与发送流程
+`PushAdapters.delete()` 与 `clear()` 是异步资源操作；先移除实例，再调用可选 `destroy`
+hook，失败归一化为 `DESTROY_FAILED`。
 
-`new PushClient()` 创建不可重新赋值的 `client.adapters = new PushAdapters()`。每个 target 始终由所属 adapter 管理。
+## Client 与错误边界
 
-client 与 adapter 的发送输入都支持三种 target 形式：省略时调用 `parseTarget({})` 生成 default；字符串引用 adapter registry 中的具名 target；对象作为匿名临时 partial 直接解析，不注册或缓存。
+`PushClient.send()` 先校验 destination，再选择 adapter。不存在的 adapter 返回
+`ADAPTER_NOT_FOUND`；destination 非法返回 `INVALID_TARGET`。发送结果为
+`{ adapter, target?, receipt }`，只有具名 string target 出现在 result 中。
+adapter name 和 target name 统称 destination name，使用同一套格式规则；
+`formatDestination(adapter, target?)` 由 core 统一把 destination 格式化为
+`adapter[:target]`。destination 的名称校验、输入归一化和格式化聚合在
+`utils/destination.ts`；名称正则是内部实现，不属于公共 API。
 
-一次 `client.send({ adapter, target?, message, signal })`：
-
-1. 校验 adapter 名称并从 `client.adapters` 查找实例；不存在时返回 `ADAPTER_NOT_FOUND`。
-2. 调用 adapter 的公共 `send`；base adapter 校验非空消息与预取消 signal，再按上述三种语义解析 target。
-3. 字符串名称非法返回 `INVALID_TARGET`，具名 target 不存在返回 `TARGET_NOT_FOUND`；default 或临时 partial 无法解析返回 `INVALID_CONFIG`。
-4. concrete adapter 的 `sendTarget` 执行平台发送。
-5. 返回 `{ adapter, target?, receipt }`；只有具名字符串 target 会出现在结果中。
-
-普通发送异常包装为 `SEND_FAILED`；错误文本支持原生 `Error`、字符串以及带非空字符串
-`message` 的 SDK 响应对象，无法提取文本时才回退为 `Unknown error`，原始异常保留为
-`cause`。adapter 主动抛出的 `PushError` 原样透传。名称统一匹配
-`[A-Za-z0-9][A-Za-z0-9_-]*`。
-
-`PushClient.destroy()` 是幂等终止操作：并行调用所有已注册 adapter 的可选 `destroy` hook，并禁止后续发送。组合层在 adapter 完整注册前调用可选 `initialize` hook；初始化中途失败时销毁已经创建的资源。
+adapter 主动抛出的 `PushError` 原样透传。其他发送异常包装为 `SEND_FAILED`，保留原异常为
+cause。destination name 匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`。`PushClient.destroy()` 幂等
+销毁全部 adapter，并禁止后续发送。
 
 ## 测试边界
 
-core 使用内存 adapter 覆盖 adapter 私有具名 targets、跨 adapter 同名、重复注册、Map-like API、default/具名/临时三种发送输入、未知 adapter/target、发送失败与取消。tsdown 输出 runtime-neutral ESM 与类型声明。
+core 测试覆盖 payload/destination/options strict runtime 校验、default/具名/临时 target、
+string/object destination、signal identity 与预取消顺序、registry lifecycle、错误归一化和
+result target 规则。构建输出保持 runtime-neutral ESM 与类型声明。

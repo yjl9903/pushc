@@ -11,33 +11,41 @@ describe('CLI formatting', () => {
         {
           target: 'ops',
           adapter: 'webhook',
-          receipt: { status: 204, statusText: 'No Content' }
+          receipt: { status: 204 }
         },
         false
       )
     ).toBe('Sent to webhook:ops (HTTP 204).\n');
 
-    expect(
-      JSON.parse(
-        formatSuccess(
-          { adapter: 'webhook', receipt: { status: 204, statusText: 'No Content' } },
-          true
-        )
-      )
-    ).toEqual({
-      ok: true,
-      adapter: 'webhook',
-      receipt: { status: 204, statusText: 'No Content' }
-    });
+    expect(JSON.parse(formatSuccess({ adapter: 'webhook', receipt: { status: 204 } }, true)))
+      .toMatchInlineSnapshot(`
+      {
+        "adapter": "webhook",
+        "ok": true,
+        "receipt": {
+          "status": 204,
+        },
+      }
+    `);
   });
 
   it('formats target lists', () => {
     const targets = [{ adapter: 'webhook' }, { adapter: 'qq', target: 'ops' }];
     expect(formatTargets(targets, false)).toBe('webhook\nqq:ops\n');
-    expect(JSON.parse(formatTargets(targets, true))).toEqual({
-      ok: true,
-      targets
-    });
+    expect(JSON.parse(formatTargets(targets, true))).toMatchInlineSnapshot(`
+      {
+        "ok": true,
+        "targets": [
+          {
+            "adapter": "webhook",
+          },
+          {
+            "adapter": "qq",
+            "target": "ops",
+          },
+        ],
+      }
+    `);
   });
 
   it('formats contextual and context-free errors', () => {
@@ -49,14 +57,19 @@ describe('CLI formatting', () => {
       ctx
     );
 
-    expect(formatError(error)).toEqual({
-      output:
-        '{"ok":false,"error":{"code":"TARGET_NOT_FOUND","message":"Target \\"missing\\" is not defined."}}\n',
-      exitCode: 2
-    });
-    expect(formatError(new Error('Could not parse arguments.'))).toEqual({
-      output: 'pushc: Could not parse arguments.\n',
-      exitCode: 1
-    });
+    expect(formatError(error)).toMatchInlineSnapshot(`
+      {
+        "exitCode": 2,
+        "output": "{"ok":false,"error":{"code":"TARGET_NOT_FOUND","message":"Target \\"missing\\" is not defined."}}
+      ",
+      }
+    `);
+    expect(formatError(new Error('Could not parse arguments.'))).toMatchInlineSnapshot(`
+      {
+        "exitCode": 1,
+        "output": "pushc: Could not parse arguments.
+      ",
+      }
+    `);
   });
 });

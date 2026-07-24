@@ -28,8 +28,12 @@ describe('napcat adapter', () => {
         { factory }
       );
       await expect(
-        adapter.send({ target: targetConfig, message: { content: 'hello' } })
-      ).resolves.toEqual({ messageId: '42' });
+        adapter.send(targetConfig, { message: 'hello', title: 'ignored', param: { x: 'ignored' } })
+      ).resolves.toMatchInlineSnapshot(`
+        {
+          "messageId": "42",
+        }
+      `);
       expect(client.connect).toHaveBeenCalledOnce();
       expect(client.send_msg).toHaveBeenCalledWith({
         ...recipient,
@@ -49,7 +53,12 @@ describe('napcat adapter', () => {
   it('creates configured instances directly through its constructor', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory: vi.fn() });
 
-    expect(adapter.config).toMatchObject({ base_url: 'ws://localhost:3001/' });
+    expect(adapter.config).toMatchInlineSnapshot(`
+      {
+        "base_url": "ws://localhost:3001/",
+        "timeout_ms": 10000,
+      }
+    `);
   });
 
   it('inherits native target defaults across named targets and rejects connection overrides', () => {
@@ -59,11 +68,24 @@ describe('napcat adapter', () => {
     });
 
     adapter.targets.register('ops', {}).register('alerts', { group_id: '456' });
-    expect(adapter.targets.get('ops')).toEqual({ group_id: '123' });
-    expect(adapter.targets.get('alerts')).toEqual({ group_id: '456' });
-    expect(() => adapter.targets.register('invalid', { base_url: 'ws://other:3001' })).toThrowError(
-      expect.objectContaining({ code: 'INVALID_CONFIG' })
-    );
+    expect(adapter.targets.get('ops')).toMatchInlineSnapshot(`
+      {
+        "group_id": "123",
+      }
+    `);
+    expect(adapter.targets.get('alerts')).toMatchInlineSnapshot(`
+      {
+        "group_id": "456",
+      }
+    `);
+    expect(captureError(() => adapter.targets.register('invalid', { base_url: 'ws://other:3001' })))
+      .toMatchInlineSnapshot(`
+      {
+        "code": "INVALID_CONFIG",
+        "message": "Invalid configuration for target "invalid": NapCat targets cannot override adapter field "base_url".",
+        "name": "PushError",
+      }
+    `);
   });
 
   it('keeps the shared connection when sending fails', async () => {
@@ -76,12 +98,9 @@ describe('napcat adapter', () => {
       { factory: () => client }
     );
 
-    await expect(
-      adapter.send({
-        target: { group_id: '123' },
-        message: { content: 'hello' }
-      })
-    ).rejects.toThrow('offline');
+    await expect(adapter.send({ group_id: '123' }, { message: 'hello' })).rejects.toThrow(
+      'offline'
+    );
     expect(client.disconnect).not.toHaveBeenCalled();
     await adapter.destroy();
     expect(client.disconnect).toHaveBeenCalledOnce();
@@ -109,12 +128,9 @@ describe('napcat adapter', () => {
       { factory: () => client }
     );
 
-    await expect(
-      adapter.send({
-        target: { user_id: '123' },
-        message: { content: 'hello' }
-      })
-    ).rejects.toMatchObject({ code: 'ABORTED' });
+    await expect(adapter.send({ user_id: '123' }, { message: 'hello' })).rejects.toMatchObject({
+      code: 'ABORTED'
+    });
     expect(client.disconnect).not.toHaveBeenCalled();
     await adapter.destroy();
     expect(client.disconnect).toHaveBeenCalledOnce();
@@ -127,8 +143,8 @@ describe('napcat adapter', () => {
     const target = { group_id: '123' };
 
     expect(factory).not.toHaveBeenCalled();
-    await adapter.send({ target, message: { content: 'first' } });
-    await adapter.send({ target, message: { content: 'second' } });
+    await adapter.send(target, { message: 'first' });
+    await adapter.send(target, { message: 'second' });
 
     expect(factory).toHaveBeenCalledOnce();
     expect(client.connect).toHaveBeenCalledOnce();
@@ -137,9 +153,9 @@ describe('napcat adapter', () => {
 
     await Promise.all([adapter.destroy(), adapter.destroy()]);
     expect(client.disconnect).toHaveBeenCalledOnce();
-    await expect(
-      adapter.send({ target, message: { content: 'after destroy' } })
-    ).rejects.toMatchObject({ code: 'ABORTED' });
+    await expect(adapter.send(target, { message: 'after destroy' })).rejects.toMatchObject({
+      code: 'ABORTED'
+    });
   });
 
   it('shares the first connection promise across concurrent sends', async () => {
@@ -155,8 +171,8 @@ describe('napcat adapter', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
     const target = { user_id: '123' };
 
-    const first = adapter.send({ target, message: { content: 'first' } });
-    const second = adapter.send({ target, message: { content: 'second' } });
+    const first = adapter.send(target, { message: 'first' });
+    const second = adapter.send(target, { message: 'second' });
     expect(factory).toHaveBeenCalledOnce();
     expect(client.connect).toHaveBeenCalledOnce();
     resolveConnect?.();
@@ -179,12 +195,12 @@ describe('napcat adapter', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
     const target = { group_id: '123' };
 
-    await expect(adapter.send({ target, message: { content: 'first' } })).rejects.toThrow(
-      'connect failed'
-    );
-    await expect(adapter.send({ target, message: { content: 'second' } })).resolves.toEqual({
-      messageId: '42'
-    });
+    await expect(adapter.send(target, { message: 'first' })).rejects.toThrow('connect failed');
+    await expect(adapter.send(target, { message: 'second' })).resolves.toMatchInlineSnapshot(`
+      {
+        "messageId": "42",
+      }
+    `);
 
     expect(factory).toHaveBeenCalledTimes(2);
     expect(failedClient.disconnect).toHaveBeenCalledOnce();
@@ -192,3 +208,17 @@ describe('napcat adapter', () => {
     expect(connectedClient.disconnect).toHaveBeenCalledOnce();
   });
 });
+
+function captureError(callback: () => unknown): unknown {
+  try {
+    callback();
+  } catch (error) {
+    if (!(error instanceof Error)) return error;
+    return {
+      name: error.name,
+      ...('code' in error ? { code: error.code } : {}),
+      message: error.message
+    };
+  }
+  throw new Error('Expected callback to throw.');
+}

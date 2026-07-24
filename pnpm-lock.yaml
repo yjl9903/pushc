@@ -71,8 +71,15 @@ importers:
       '@pushc/core':
         specifier: workspace:*
         version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
 packages:
 
@@ -1281,6 +1288,9 @@ packages:
   yuku-parser@0.6.1:
     resolution: {integrity: sha512-dPE3/+H2VBw9LhjoIVeW/axKidYGd+XzNtrwGGseZ0325cQFl0Dpwyh0R74XWe/WqQn4M8CR5YApsv2KF2zN1A==}
 
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
 snapshots:
 
   '@breadc/color@1.0.0-beta.17': {}
@@ -2182,3 +2192,5 @@ snapshots:
       '@yuku-parser/binding-linux-x64-musl': 0.6.1
       '@yuku-parser/binding-win32-arm64': 0.6.1
       '@yuku-parser/binding-win32-x64': 0.6.1
+
+  zod@4.4.3: {}

@@ -1,25 +1,24 @@
-export interface PushMessage {
-  content: string;
+export interface PushPayload {
+  readonly message: string;
+  readonly title?: string;
+  readonly param?: Readonly<Record<string, string>>;
 }
 
-export type PushTargetInput<TTarget extends object = Record<string, unknown>> =
-  string | Partial<TTarget>;
-
-export interface PushAdapterSendInput<TTarget extends object = Record<string, unknown>> {
-  target?: PushTargetInput<TTarget>;
-  message: PushMessage;
-  signal?: AbortSignal;
+export interface PushSendOptions {
+  readonly signal?: AbortSignal;
 }
+
+export type PushTargetInput = string | Readonly<Record<string, unknown>>;
+
+export type PushDestination =
+  | string
+  | {
+      readonly adapter: string;
+      readonly target?: PushTargetInput;
+    };
 
 export interface PushResult<TReceipt = unknown> {
-  adapter: string;
-  target?: string;
-  receipt: TReceipt;
-}
-
-export interface PushClientSendInput {
-  adapter: string;
-  target?: string | object;
-  message: PushMessage;
-  signal?: AbortSignal;
+  readonly adapter: string;
+  readonly target?: string;
+  readonly receipt: TReceipt;
 }

@@ -3,7 +3,7 @@
 [![version](https://img.shields.io/npm/v/@pushc/adapter-webhook?label=@pushc/adapter-webhook)](https://www.npmjs.com/package/@pushc/adapter-webhook)
 [![CI](https://github.com/yjl9903/pushc/actions/workflows/ci.yml/badge.svg)](https://github.com/yjl9903/pushc/actions/workflows/ci.yml)
 
-HTTP webhook adapter for pushc.
+Universal HTTP webhook adapter for pushc.
 
 ## Installation
 
@@ -17,22 +17,24 @@ npm i @pushc/adapter-webhook
 import { WebhookAdapter } from '@pushc/adapter-webhook';
 
 const adapter = new WebhookAdapter({
-  url: 'https://example.com/hook',
-  headers: { Authorization: 'Bearer token' }
-});
-
-await adapter.send({
-  target: {
+  url: 'https://api.day.app/push',
+  request: {
+    content_type: 'application/json',
     body: {
-      text: '{{message}}'
+      device_key: process.env.BARK_DEVICE_KEY!,
+      body: '{{message}}',
+      title: '{{title:-pushc}}',
+      group: '{{param.group:-pushc}}',
+      level: 'active'
     }
-  },
-  message: {
-    content: 'Build completed'
   }
 });
 
-await adapter.destroy();
+await adapter.send(undefined, {
+  title: 'Production',
+  message: 'Build completed',
+  param: { group: 'releases' }
+});
 ```
 
 ## License

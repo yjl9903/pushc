@@ -17,19 +17,21 @@
 
 | 能力           | 用途                                                                        |
 | -------------- | --------------------------------------------------------------------------- |
-| `url`          | 配置服务端地址、topic 或 API endpoint。                                     |
-| `method`       | 本批服务使用 `POST`；ntfy 也接受 `PUT`。                                    |
-| `headers`      | 配置 Bearer Token、服务专用 Token 及其他请求 header。                       |
-| `content_type` | 使用标准 media type 选择请求体编码，如 `application/json` 或 `text/plain`。 |
-| `body`         | 保留服务原始字段，并在任意字符串值中插入 `{{message}}`。                    |
-| `timeout_ms`   | 限制请求等待时间。                                                          |
+| `url`                    | 配置静态可信服务端地址，并确定允许请求的 origin。                            |
+| `request.url`            | 可选动态 endpoint；未配置时使用顶层 `url`。                                 |
+| `request.method`         | 本批服务使用 `POST`；ntfy 也接受 `PUT`。                                    |
+| `request.headers`        | 配置 Bearer Token、服务专用 Token 及其他请求 header。                       |
+| `request.content_type`   | 使用标准 media type 选择请求体编码，如 `application/json` 或 `text/plain`。 |
+| `request.body`           | 保留服务原始字段，并在任意字符串值中插入 `{{message}}`。                    |
+| `request.timeout_ms`     | 限制请求等待时间。                                                          |
+| `response`               | 空占位；本阶段不解析响应。                                                  |
 
 `config.toml` 是允许 agent 阅读的明文，不得包含任何真实秘密。Token、key、password 和
 其他 credential 必须放在配置文件旁的 `.env` 或进程环境中，`config.toml` 只通过
 `${ENV_NAME}` 引用。adapter 默认 URL 是不参与发送时渲染的静态可信 endpoint；只有 target
-覆盖 URL（包括 query）、header value 和 body string value 可以通过模板引用 `{{message}}`、
-`{{title}}` 与 `{{param.key}}`。adapter 和 target URL 都必须是包含 scheme 的绝对 HTTP(S)
-URL，target URL 必须与 adapter URL 同 origin，不支持相对 URL。其余字段原样传给上游服务。
+或 adapter 的 `request.url`（包括 query）、header value 和 body string value 可以通过模板
+引用 `{{message}}`、`{{title}}` 与 `{{param.key}}`。`request.url` 必须是包含 scheme 的绝对
+HTTP(S) URL，并与顶层 `url` 同 origin，不支持相对 URL。其余字段原样传给上游服务。
 本文配置示例按照 [Webhook adapter 优化计划](../plan/260722-webhook-optimization.md)中的预期
 配置形态描述。
 
@@ -108,10 +110,12 @@ Bark 也接受以下形式，但不作为 pushc 的推荐配置：
 [adapters.bark]
 type = "webhook"
 url = "https://api.day.app/push"
+
+[adapters.bark.request]
 method = "POST"
 content_type = "application/json"
 
-[adapters.bark.body]
+[adapters.bark.request.body]
 device_key = "${BARK_DEVICE_KEY}"
 body = "{{message}}"
 title = "{{title:-pushc}}"
@@ -201,11 +205,13 @@ text body 形式可以通过 header 提供同类参数：`X-Title`、`X-Priority
 [adapters.ntfy]
 type = "webhook"
 url = "https://ntfy.sh/"
+
+[adapters.ntfy.request]
 method = "POST"
 content_type = "application/json"
 headers = { Authorization = "Bearer ${NTFY_TOKEN}" }
 
-[adapters.ntfy.body]
+[adapters.ntfy.request.body]
 topic = "${NTFY_TOPIC}"
 message = "{{message}}"
 title = "{{title:-pushc}}"
@@ -271,19 +277,21 @@ Token 也可以放在 `token` query 参数或 `Authorization: Bearer <token>` �
 [adapters.gotify]
 type = "webhook"
 url = "https://push.example.com/message"
+
+[adapters.gotify.request]
 method = "POST"
 content_type = "application/json"
 headers = { X-Gotify-Key = "${GOTIFY_APP_TOKEN}" }
 
-[adapters.gotify.body]
+[adapters.gotify.request.body]
 message = "{{message}}"
 title = "{{title:-pushc}}"
 priority = 5
 
-[adapters.gotify.body.extras."client::display"]
+[adapters.gotify.request.body.extras."client::display"]
 contentType = "text/plain"
 
-[adapters.gotify.body.extras."client::notification".click]
+[adapters.gotify.request.body.extras."client::notification".click]
 url = "https://example.com/status"
 ```
 
@@ -353,10 +361,12 @@ multipart 请求还支持二进制 `attachment`；使用 JSON 时可以改用
 [adapters.pushover]
 type = "webhook"
 url = "https://api.pushover.net/1/messages.json"
+
+[adapters.pushover.request]
 method = "POST"
 content_type = "application/json"
 
-[adapters.pushover.body]
+[adapters.pushover.request.body]
 token = "${PUSHOVER_APP_TOKEN}"
 user = "${PUSHOVER_USER_KEY}"
 message = "{{message}}"
@@ -370,10 +380,12 @@ priority = 0
 [adapters.pushover-emergency]
 type = "webhook"
 url = "https://api.pushover.net/1/messages.json"
+
+[adapters.pushover-emergency.request]
 method = "POST"
 content_type = "application/json"
 
-[adapters.pushover-emergency.body]
+[adapters.pushover-emergency.request.body]
 token = "${PUSHOVER_APP_TOKEN}"
 user = "${PUSHOVER_USER_KEY}"
 message = "{{message}}"

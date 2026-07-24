@@ -1,7 +1,7 @@
 import { PushError } from '@pushc/core';
 import { BreadcError, type Breadc } from 'breadc';
 import { ConfigError } from '../config.js';
-import { MessageInputError } from '../input.js';
+import { CliUsageError, MessageInputError } from '../input.js';
 
 export interface NormalizedError {
   code: string;
@@ -34,7 +34,8 @@ export function normalizeError(error: unknown): NormalizedError {
   if (
     error instanceof PushError ||
     error instanceof ConfigError ||
-    error instanceof MessageInputError
+    error instanceof MessageInputError ||
+    error instanceof CliUsageError
   ) {
     return { code: error.code, message: error.message };
   }
@@ -55,6 +56,7 @@ export function getErrorExitCode(error: unknown): number {
   if (
     error instanceof ConfigError ||
     error instanceof MessageInputError ||
+    error instanceof CliUsageError ||
     error instanceof BreadcError
   ) {
     return 2;

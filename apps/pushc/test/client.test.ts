@@ -53,17 +53,47 @@ describe('makePushClient', () => {
     const qq = client.adapters.get('qq');
 
     expect(webhook).toBeInstanceOf(WebhookAdapter);
-    expect(webhook?.config).toMatchObject({ url: 'https://example.com/from-env' });
-    expect([...webhook!.targets]).toEqual([]);
-    expect(webhook!.targets.resolve()).toEqual({
-      body_mode: 'json',
-      body: { text: '{{message}}' }
-    });
+    expect(webhook?.config).toMatchInlineSnapshot(`
+      {
+        "request": {
+          "headers": {},
+          "method": "POST",
+          "timeout_ms": 10000,
+          "url": "https://example.com/from-env",
+        },
+        "response": {},
+        "url": "https://example.com/from-env",
+      }
+    `);
+    expect([...webhook!.targets]).toMatchInlineSnapshot(`[]`);
+    expect(webhook!.targets.resolve()).toMatchInlineSnapshot(`
+      {
+        "request": {
+          "headers": {},
+          "method": "POST",
+          "timeout_ms": 10000,
+          "url": "https://example.com/from-env",
+        },
+        "response": {},
+      }
+    `);
     expect(qq).toBeInstanceOf(NapCatAdapter);
-    expect([...qq!.targets]).toEqual([
-      ['ops', { group_id: '123456' }],
-      ['alerts', { group_id: '654321' }]
-    ]);
+    expect([...qq!.targets]).toMatchInlineSnapshot(`
+      [
+        [
+          "ops",
+          {
+            "group_id": "123456",
+          },
+        ],
+        [
+          "alerts",
+          {
+            "group_id": "654321",
+          },
+        ],
+      ]
+    `);
   });
 
   it('accepts an explicit config file path', async () => {
@@ -77,24 +107,47 @@ describe('makePushClient', () => {
     const client = await makePushClient(join(root, 'nested', 'custom.toml'));
 
     expect(client.adapters.get('webhook')?.targets.size).toBe(0);
-    expect(client.adapters.get('webhook')?.targets.resolve()).toEqual({
-      body_mode: 'json',
-      body: { text: '{{message}}' }
-    });
+    expect(client.adapters.get('webhook')?.targets.resolve()).toMatchInlineSnapshot(`
+      {
+        "request": {
+          "headers": {},
+          "method": "POST",
+          "timeout_ms": 10000,
+          "url": "https://example.com/",
+        },
+        "response": {},
+      }
+    `);
   });
 
-  it('rejects protected target fields without registering a partial adapter', async () => {
+  it('allows targets to override complete webhook request fields', async () => {
     const root = await tempDirectory();
     const config = join(root, 'config.toml');
     await writeFile(
       config,
-      '[adapters.webhook]\ntype = "webhook"\nurl = "https://example.com"\n[adapters.webhook.targets.ops]\nurl = "https://invalid.example"\n'
+      '[adapters.webhook]\ntype = "webhook"\nurl = "https://example.com"\n[adapters.webhook.request.headers]\nX-Base = "yes"\n[adapters.webhook.targets.ops.request]\nurl = "https://example.com/ops"\nmethod = "PUT"\nheaders = { X-Target = "yes" }\nbody = { message = "{{message}}" }\n'
     );
 
-    await expect(makePushClient(config)).rejects.toMatchObject({
-      code: 'INVALID_CONFIG',
-      message: expect.stringContaining('adapter "webhook"')
-    });
+    const client = await makePushClient(config);
+    expect(client.adapters.get('webhook')?.targets.get('ops')).toMatchInlineSnapshot(`
+      {
+        "request": {
+          "body": {
+            "message": "{{message}}",
+          },
+          "content_type": "application/json",
+          "headers": {
+            "x-base": "yes",
+            "x-target": "yes",
+          },
+          "method": "PUT",
+          "timeout_ms": 10000,
+          "url": "https://example.com/ops",
+        },
+        "response": {},
+      }
+    `);
+    await client.destroy();
   });
 
   it('reports unsupported implementations, constructor failures and invalid defaults', async () => {

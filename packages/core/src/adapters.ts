@@ -1,6 +1,6 @@
-import { PushAdapter } from './adapter.js';
 import { PushError } from './error.js';
-import { validatePushName } from './utils/name.js';
+import { PushAdapter } from './adapter.js';
+import { validateDestinationName } from './utils/destination.js';
 
 export type AnyPushAdapter = PushAdapter<any, any, any>;
 
@@ -16,7 +16,7 @@ export class PushAdapters implements Iterable<[string, AnyPushAdapter]> {
   }
 
   register(name: string, adapter: AnyPushAdapter): this {
-    validatePushName(name, 'Adapter');
+    validateDestinationName(name, 'Adapter');
     if (this.#items.has(name)) {
       throw new PushError('DUPLICATE_ADAPTER', `Adapter "${name}" is already registered.`);
     }

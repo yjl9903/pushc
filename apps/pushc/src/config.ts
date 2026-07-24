@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { isPushName, PushError } from '@pushc/core';
+import { isDestinationName, PushError } from '@pushc/core';
 import { config as loadDotenv } from 'dotenv';
 import { parse } from 'smol-toml';
 import { isNonEmptyString, isRecord } from './utils/value.js';
@@ -163,7 +163,7 @@ export function parsePushConfig(input: unknown): PushConfig {
   const adapterEntries: Array<[string, PushAdapterConfigDefinition]> = [];
 
   for (const [name, inputAdapter] of Object.entries(adapterInputs)) {
-    validateName(name, 'Adapter');
+    validateDestinationName(name, 'Adapter');
     const adapter = configRecord(inputAdapter, `adapters.${name} must be a table.`);
     if (!isNonEmptyString(adapter.type)) {
       throw new PushError('INVALID_CONFIG', `adapters.${name}.type must be a non-empty string.`);
@@ -174,7 +174,7 @@ export function parsePushConfig(input: unknown): PushConfig {
         : configRecord(adapter.targets, `adapters.${name}.targets must be a table.`);
     const targetEntries: Array<[string, Readonly<Record<string, unknown>>]> = [];
     for (const [targetName, inputTarget] of Object.entries(targetInputs)) {
-      validateName(targetName, 'Target');
+      validateDestinationName(targetName, 'Target');
       const target = configRecord(
         inputTarget,
         `adapters.${name}.targets.${targetName} must be a table.`
@@ -229,8 +229,8 @@ function configRecord(input: unknown, message: string): Record<string, unknown> 
   return input;
 }
 
-function validateName(name: string, label: string): void {
-  if (!isPushName(name)) {
+function validateDestinationName(name: string, label: string): void {
+  if (!isDestinationName(name)) {
     throw new PushError(
       'INVALID_CONFIG',
       `${label} names must start with a letter or digit and use only letters, digits, _ or -.`

@@ -9,6 +9,7 @@ export type PushErrorCode =
   | 'INVALID_CONFIG'
   | 'INVALID_TARGET'
   | 'INVALID_MESSAGE'
+  | 'INVALID_SEND_OPTIONS'
   | 'SEND_FAILED';
 
 export class PushError extends Error {
@@ -19,6 +20,8 @@ export class PushError extends Error {
     super(message);
     this.name = 'PushError';
     this.code = code;
-    this.cause = options.cause;
+    if (Object.hasOwn(options, 'cause')) {
+      this.cause = options.cause;
+    }
   }
 }

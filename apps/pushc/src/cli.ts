@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { breadc } from 'breadc';
+import { formatDestination, PushError } from '@pushc/core';
 
 import packageJson from '../package.json' with { type: 'json' };
 
 import { makePushClient } from './client.js';
 import { findConfigPath } from './config.js';
-import { resolveMessage } from './input.js';
+import { parseParamEntries, resolveMessage } from './input.js';
 import { CliError } from './utils/error.js';
 import {
   formatError,
@@ -14,7 +15,6 @@ import {
   formatTargets,
   type CliTargetSummary
 } from './utils/format.js';
-import { formatTargetAddress, parseTargetAddress } from './utils/target-address.js';
 
 const cli = breadc('pushc', {
   version: packageJson.version,
@@ -25,11 +25,17 @@ const cli = breadc('pushc', {
 
 cli
   .command('send [...content]', 'Send a message to a configured target')
-  .option('--target <address>', 'Select a target as adapter[:target]')
+  .option('--target <destination>', 'Select a destination as adapter[:target]')
+  .option('--title <title>', 'Set an optional message title')
+  .option('--param [...entry]', 'Set string payload parameters as key=value')
   .option('-f, --file <path>', 'Read message content from a UTF-8 file')
   .action(async (content, options, ctx) => {
     try {
-      const destination = parseTargetAddress(options.target);
+      if (typeof options.target !== 'string') {
+        throw new PushError('INVALID_TARGET', 'The --target option is required.');
+      }
+      const destination = options.target;
+      const param = parseParamEntries(options.param);
       const configPath = await findConfigPath({
         ...(options.config ? { config: options.config } : {})
       });
@@ -40,10 +46,10 @@ cli
             content,
             ...(options.file ? { file: options.file } : {})
           });
-          return await client.send({
-            adapter: destination.adapter,
-            ...(destination.target === undefined ? {} : { target: destination.target }),
-            message: { content: message }
+          return await client.send(destination, {
+            message,
+            ...(options.title === undefined ? {} : { title: options.title }),
+            ...(param === undefined ? {} : { param })
           });
         } finally {
           await client.destroy();
@@ -73,8 +79,8 @@ cli.command('targets', 'List configured targets').action(async (options, ctx) =>
                 }))
           )
           .sort((a, b) =>
-            formatTargetAddress(a.adapter, a.target).localeCompare(
-              formatTargetAddress(b.adapter, b.target)
+            formatDestination(a.adapter, a.target).localeCompare(
+              formatDestination(b.adapter, b.target)
             )
           );
       } finally {

@@ -48,9 +48,9 @@ text rather than JSON.
 pushc targets [--config <path>] [--json]
 ```
 
-Load and validate the configuration, initialize adapters, and list configured destination addresses
+Load and validate the configuration, initialize adapters, and list configured destinations
 in lexical order. An adapter with named targets produces one entry per target. An adapter without
-named targets produces its default address, even though no named target is registered.
+named targets produces its default destination, even though no named target is registered.
 
 Text output:
 
@@ -79,8 +79,8 @@ options, target options, URLs, or tokens.
 ## `send`
 
 ```bash
-pushc send --target <adapter[:target]> [...content]
-pushc send --target <adapter[:target]> --file <path>
+pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] [...content]
+pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] --file <path>
 <producer> | pushc send --target <adapter[:target]>
 ```
 
@@ -100,6 +100,12 @@ Message source precedence and validation:
 Positional content and `--file` are mutually exclusive. File and stdin content are not trimmed
 before delivery, but every source must contain at least one non-whitespace character.
 
+`--title` supplies the optional public title field. `--param` may be repeated and supplies a flat
+string map. Each entry is split at its first `=`; an empty value is valid, additional `=` characters
+belong to the value, and key/value are not trimmed. Keys match
+`[A-Za-z0-9][A-Za-z0-9_.-]*` and are case-sensitive. Missing `=`, invalid/empty keys, and duplicate
+keys fail with `CLI_USAGE`. These options are not credential channels.
+
 Text success examples:
 
 ```text
@@ -115,7 +121,7 @@ preserves the result fields:
   "ok": true,
   "adapter": "deploy",
   "target": "release",
-  "receipt": { "status": 204, "statusText": "No Content" }
+  "receipt": { "status": 204 }
 }
 ```
 

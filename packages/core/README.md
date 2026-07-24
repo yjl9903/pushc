@@ -19,18 +19,27 @@ import { WebhookAdapter } from '@pushc/adapter-webhook';
 
 const client = new PushClient();
 
-client.adapters.register('webhook', new WebhookAdapter({ url: 'https://example.com/hook' }));
-
-await client.send({
-  adapter: 'webhook',
-  target: {
-    body: {
-      text: '{{message}}'
+client.adapters.register(
+  'bark',
+  new WebhookAdapter({
+    url: 'https://api.day.app/push',
+    request: {
+      content_type: 'application/json',
+      body: {
+        device_key: process.env.BARK_DEVICE_KEY!,
+        body: '{{message}}',
+        title: '{{title:-pushc}}',
+        group: '{{param.group:-pushc}}',
+        level: 'active'
+      }
     }
-  },
-  message: {
-    content: 'Build completed'
-  }
+  })
+);
+
+await client.send('bark', {
+  title: 'Production',
+  message: 'Build completed',
+  param: { group: 'deployments' }
 });
 
 await client.destroy();

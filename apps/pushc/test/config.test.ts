@@ -91,30 +91,57 @@ describe('config', () => {
     await writeFile(join(root, '.env'), 'WEBHOOK_URL=https://example.com/from-dotenv\n');
     await writeFile(
       configPath,
-      '[adapters.ops]\ntype = "webhook"\nurl = "${WEBHOOK_URL}"\nbody_mode = "json"\n[adapters.ops.targets.deploy]\nbody = { text = "{{message}}" }\n'
+      '[adapters.ops]\ntype = "webhook"\nurl = "${WEBHOOK_URL}"\n[adapters.ops.request]\ncontent_type = "application/json"\n[adapters.ops.targets.deploy.request]\nbody = { text = "{{message}}" }\n'
     );
     const env: NodeJS.ProcessEnv = {};
 
     const loaded = await loadConfig({ path: configPath, env });
-    expect(loaded.config).toEqual({
-      adapters: {
-        ops: {
-          type: 'webhook',
-          url: 'https://example.com/from-dotenv',
-          body_mode: 'json',
-          targets: { deploy: { body: { text: '{{message}}' } } }
-        }
+    expect(loaded.config).toMatchInlineSnapshot(`
+      {
+        "adapters": {
+          "ops": {
+            "request": {
+              "content_type": "application/json",
+            },
+            "targets": {
+              "deploy": {
+                "request": {
+                  "body": {
+                    "text": "{{message}}",
+                  },
+                },
+              },
+            },
+            "type": "webhook",
+            "url": "https://example.com/from-dotenv",
+          },
+        },
       }
-    });
-    expect(parsePushConfig(loaded.config)).toEqual({
-      adapters: {
-        ops: {
-          type: 'webhook',
-          options: { url: 'https://example.com/from-dotenv', body_mode: 'json' },
-          targets: { deploy: { body: { text: '{{message}}' } } }
-        }
+    `);
+    expect(parsePushConfig(loaded.config)).toMatchInlineSnapshot(`
+      {
+        "adapters": {
+          "ops": {
+            "options": {
+              "request": {
+                "content_type": "application/json",
+              },
+              "url": "https://example.com/from-dotenv",
+            },
+            "targets": {
+              "deploy": {
+                "request": {
+                  "body": {
+                    "text": "{{message}}",
+                  },
+                },
+              },
+            },
+            "type": "webhook",
+          },
+        },
       }
-    });
+    `);
   });
 
   it('does not overwrite existing environment variables and reports missing ones safely', async () => {
@@ -124,7 +151,16 @@ describe('config', () => {
     await writeFile(configPath, '[adapters.ops]\ntype = "webhook"\nurl = "${TOKEN}"\n');
 
     const loaded = await loadConfig({ path: configPath, env: { TOKEN: 'from-process' } });
-    expect(loaded.config).toMatchObject({ adapters: { ops: { url: 'from-process' } } });
+    expect(loaded.config).toMatchInlineSnapshot(`
+      {
+        "adapters": {
+          "ops": {
+            "type": "webhook",
+            "url": "from-process",
+          },
+        },
+      }
+    `);
 
     await writeFile(configPath, '[adapters.ops]\ntype = "webhook"\nurl = "${MISSING_SECRET}"\n');
     await expect(loadConfig({ path: configPath, env: {} })).rejects.toMatchObject({
@@ -134,18 +170,55 @@ describe('config', () => {
   });
 
   it('rejects unknown root fields, invalid names and non-table targets', () => {
-    expect(() => parsePushConfig({ version: 1, adapters: {} })).toThrowError(
-      expect.objectContaining({ code: 'INVALID_CONFIG' })
-    );
-    expect(() =>
-      parsePushConfig({ adapters: { 'bad.name': { type: 'webhook', url: 'https://example.com' } } })
-    ).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG' }));
-    expect(() =>
-      parsePushConfig({
-        adapters: {
-          webhook: { type: 'webhook', url: 'https://example.com', targets: { 'bad:name': {} } }
-        }
-      })
-    ).toThrowError(expect.objectContaining({ code: 'INVALID_CONFIG' }));
+    expect(captureError(() => parsePushConfig({ version: 1, adapters: {} })))
+      .toMatchInlineSnapshot(`
+      {
+        "code": "INVALID_CONFIG",
+        "message": "Unknown configuration root field "version".",
+        "name": "PushError",
+      }
+    `);
+    expect(
+      captureError(() =>
+        parsePushConfig({
+          adapters: { 'bad.name': { type: 'webhook', url: 'https://example.com' } }
+        })
+      )
+    ).toMatchInlineSnapshot(`
+      {
+        "code": "INVALID_CONFIG",
+        "message": "Adapter names must start with a letter or digit and use only letters, digits, _ or -.",
+        "name": "PushError",
+      }
+    `);
+    expect(
+      captureError(() =>
+        parsePushConfig({
+          adapters: {
+            webhook: { type: 'webhook', url: 'https://example.com', targets: { 'bad:name': {} } }
+          }
+        })
+      )
+    ).toMatchInlineSnapshot(`
+      {
+        "code": "INVALID_CONFIG",
+        "message": "Target names must start with a letter or digit and use only letters, digits, _ or -.",
+        "name": "PushError",
+      }
+    `);
   });
 });
+
+function captureError(callback: () => unknown): unknown {
+  try {
+    callback();
+  } catch (error) {
+    if (!(error instanceof Error)) return error;
+    return {
+      name: error.name,
+      ...('code' in error ? { code: error.code } : {}),
+      message: error.message
+    };
+  }
+  throw new Error('Expected callback to throw.');
+}

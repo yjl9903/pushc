@@ -1,13 +1,8 @@
-import type { PushAdapterSendInput, PushMessage } from './types.js';
+import type { PushPayload, PushSendOptions, PushTargetInput } from './types.js';
 
 import { PushError } from './error.js';
 import { PushTargets } from './targets.js';
-
-export interface AdapterSendContext<TTarget> {
-  message: PushMessage;
-  target: TTarget;
-  signal?: AbortSignal;
-}
+import { normalizePayload, normalizeSendOptions } from './validation.js';
 
 export abstract class PushAdapter<
   TConfig = unknown,
@@ -26,24 +21,31 @@ export abstract class PushAdapter<
 
   destroy?(): Promise<void>;
 
-  async send({ target, message, signal }: PushAdapterSendInput<TTarget>): Promise<TReceipt> {
-    if (!message || typeof message.content !== 'string' || message.content.trim().length === 0) {
-      throw new PushError('INVALID_MESSAGE', 'Message content must not be empty.');
-    }
-    if (signal?.aborted) {
+  async send(
+    target: PushTargetInput | undefined,
+    payload: PushPayload,
+    options?: PushSendOptions
+  ): Promise<TReceipt> {
+    const normalizedPayload = normalizePayload(payload);
+    const normalizedOptions = normalizeSendOptions(options);
+    if (normalizedOptions.signal?.aborted) {
       throw new PushError('SEND_FAILED', 'Message delivery was aborted.', {
-        cause: signal.reason
+        cause: normalizedOptions.signal.reason
       });
     }
 
-    return await this.sendTarget({
-      message,
-      target: this.targets.resolve(target),
-      signal
-    });
+    return await this.sendTarget(
+      this.targets.resolve(target),
+      normalizedPayload,
+      normalizedOptions
+    );
   }
 
   abstract parseTarget(input: unknown): TTarget;
 
-  protected abstract sendTarget(context: AdapterSendContext<TTarget>): Promise<TReceipt>;
+  protected abstract sendTarget(
+    target: TTarget,
+    payload: PushPayload,
+    options: Readonly<PushSendOptions>
+  ): Promise<TReceipt>;
 }

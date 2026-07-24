@@ -5,4 +5,4 @@ export * from './client.js';
 export * from './error.js';
 export * from './targets.js';
 export * from './types.js';
-export { isPushName, PUSH_NAME_PATTERN } from './utils/name.js';
+export * from './utils/destination.js';

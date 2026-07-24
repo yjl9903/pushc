@@ -1,94 +1,75 @@
-import { WebhookError } from './error.js';
-import type { JsonValue, WebhookTargetConfig } from './types.js';
+import type { PushPayload } from '@pushc/core';
 
-const TARGET_FIELDS = new Set(['body_mode', 'body']);
+import type { JsonValue } from './types.js';
 
-export function webhookTargetDefaults(input: unknown): Readonly<Record<string, unknown>> {
-  if (!isRecord(input)) return {};
-  return Object.freeze(
-    Object.fromEntries(
-      [...TARGET_FIELDS].filter((field) => field in input).map((field) => [field, input[field]])
-    )
-  );
-}
+const PARAM_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const ASCII_WHITESPACE = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
 
-export function parseWebhookTarget(input: unknown): WebhookTargetConfig {
-  const value = record(input, 'Webhook target configuration must be a table.');
-  rejectUnknownTargetFields(value);
-  const bodyMode = optionalString(value.body_mode, 'body_mode') ?? 'json';
-  if (bodyMode !== 'json' && bodyMode !== 'text') {
-    throw new WebhookError('INVALID_CONFIG', 'body_mode must be either "json" or "text".');
-  }
-
-  const body = parseJsonValue(
-    value.body ?? (bodyMode === 'json' ? { text: '{{message}}' } : '{{message}}'),
-    'body'
-  );
-  if (bodyMode === 'text' && typeof body !== 'string') {
-    throw new WebhookError('INVALID_CONFIG', 'body must be a string when body_mode is "text".');
-  }
-  return { body_mode: bodyMode, body };
-}
-
-export function parseWebhookTargetPartial(input: unknown): Record<string, unknown> {
-  const value = record(input, 'Webhook target configuration must be a table.');
-  rejectUnknownTargetFields(value);
-  return value;
-}
-
-function rejectUnknownTargetFields(value: Record<string, unknown>): void {
-  for (const field of Object.keys(value)) {
-    if (!TARGET_FIELDS.has(field)) {
-      throw new WebhookError(
-        'INVALID_CONFIG',
-        `Webhook targets cannot override adapter field "${field}".`
-      );
+export function renderWebhookTemplate(template: string, payload: PushPayload): string {
+  let output = '';
+  let cursor = 0;
+  while (cursor < template.length) {
+    const escapedStart = template.startsWith('\\{{', cursor);
+    const start = escapedStart ? cursor + 1 : template.startsWith('{{', cursor) ? cursor : -1;
+    if (start < 0) {
+      output += template[cursor];
+      cursor += 1;
+      continue;
     }
+
+    const end = template.indexOf('}}', start + 2);
+    if (end < 0) {
+      output += template.slice(cursor);
+      break;
+    }
+    const source = template.slice(start, end + 2);
+    if (escapedStart) {
+      output += source;
+    } else {
+      const replacement = evaluateExpression(template.slice(start + 2, end), payload);
+      output += replacement === undefined ? source : replacement;
+    }
+    cursor = end + 2;
   }
+  return output;
 }
 
-export function renderWebhookBody(value: JsonValue, message: string): JsonValue {
-  if (typeof value === 'string') return value.replaceAll('{{message}}', message);
-  if (Array.isArray(value)) return value.map((item) => renderWebhookBody(item, message));
+export function renderWebhookBody(value: JsonValue, payload: PushPayload): JsonValue {
+  if (typeof value === 'string') return renderWebhookTemplate(value, payload);
+  if (Array.isArray(value)) return value.map((item) => renderWebhookBody(item, payload));
   if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, renderWebhookBody(item, message)])
-    );
+    const result = Object.create(null) as Record<string, JsonValue>;
+    for (const [key, item] of Object.entries(value)) {
+      result[key] = renderWebhookBody(item, payload);
+    }
+    return result;
   }
   return value;
 }
 
-function parseJsonValue(input: unknown, path: string): JsonValue {
-  if (input === null || typeof input === 'string' || typeof input === 'boolean') return input;
-  if (typeof input === 'number' && Number.isFinite(input)) return input;
-  if (typeof input === 'bigint' && Number.isSafeInteger(Number(input))) return Number(input);
-  if (Array.isArray(input)) {
-    return input.map((item, index) => parseJsonValue(item, `${path}[${index}]`));
-  }
-  if (isRecord(input)) {
-    return Object.fromEntries(
-      Object.entries(input).map(([key, item]) => [key, parseJsonValue(item, `${path}.${key}`)])
-    );
-  }
-  throw new WebhookError(
-    'INVALID_CONFIG',
-    `${path} contains a value that cannot be encoded as JSON.`
+function evaluateExpression(expression: string, payload: PushPayload): string | undefined {
+  const trimmed = expression.replace(ASCII_WHITESPACE, '');
+  const separator = trimmed.indexOf(':-');
+  const variable = (separator < 0 ? trimmed : trimmed.slice(0, separator)).replace(
+    ASCII_WHITESPACE,
+    ''
   );
-}
+  const fallback = separator < 0 ? undefined : trimmed.slice(separator + 2);
 
-function optionalString(input: unknown, path: string): string | undefined {
-  if (input === undefined) return undefined;
-  if (typeof input !== 'string') {
-    throw new WebhookError('INVALID_CONFIG', `${path} must be a string.`);
+  let value: string | undefined;
+  if (variable === 'message') {
+    value = payload.message;
+  } else if (variable === 'title') {
+    value = payload.title;
+  } else if (variable.startsWith('param.')) {
+    const key = variable.slice('param.'.length);
+    if (!PARAM_KEY_PATTERN.test(key)) return undefined;
+    value =
+      payload.param !== undefined && Object.hasOwn(payload.param, key)
+        ? payload.param[key]
+        : undefined;
+  } else {
+    return undefined;
   }
-  return input.trim();
-}
-
-function record(input: unknown, message: string): Record<string, unknown> {
-  if (!isRecord(input)) throw new WebhookError('INVALID_CONFIG', message);
-  return input;
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return typeof input === 'object' && input !== null && !Array.isArray(input);
+  return value === undefined || value === '' ? (fallback ?? '') : value;
 }
