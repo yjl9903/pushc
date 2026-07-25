@@ -1,5 +1,10 @@
 # Send 最终请求 Dry Run
 
+> 当前 adapter preparation/dispatch 契约已由
+> [`260725-attachments-and-request-lifecycle.md`](./260725-attachments-and-request-lifecycle.md)
+> 取代；本文保留最初引入
+> dry-run 的背景。
+
 ## 背景与目标
 
 `pushc send` 需要在不触发平台调用的前提下检查最终消息内容。只打印 CLI payload 无法覆盖

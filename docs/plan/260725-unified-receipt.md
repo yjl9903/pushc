@@ -10,7 +10,7 @@ JSON 格式。本次将 Receipt 收敛为 adapter 平台数据，将 success/err
 
 - Receipt 只保存 `{ request, response?, summary? }`，不包含 success/error。
 - `PushResult` 是顶层判别联合；所有预期发送错误都返回 `success: false`，不再抛出。
-- adapter send outcome 承载 receipt/error，client 合并 adapter、具名 target 和 outcome。
+- adapter send result 承载 receipt/error，client 合并 adapter、具名 target 和 result。
 - NapCat 记录 `send_msg` 和完整 params。Webhook 记录完整最终请求，JSON body 保留序列化前
   的值；HTTP 200–299 成功。
 - Webhook response 记录 status、过滤常见鉴权字段后的 headers，并 best-effort 解析 JSON。
@@ -24,7 +24,7 @@ JSON 格式。本次将 Receipt 收敛为 adapter 平台数据，将 success/err
 
 ## 技术方案
 
-core 定义纯 `PushReceipt`、adapter send outcome 和顶层 `PushResult`。`PushAdapter.send`
-把 payload/options/target 错误转换为失败 outcome；`PushClient.send` 逐步保留可信
+core 定义纯 `PushReceipt`、adapter send result 和顶层 `PushResult`。`PushAdapter.send`
+把 payload/options/target 错误转换为失败 result；`PushClient.send` 逐步保留可信
 adapter/target，并把所有预期错误归一化为失败 `PushResult`。`makePushRuntime` 继续统一
 配置发现和 client 构造，CLI 将其错误转换为同一顶层失败形状。

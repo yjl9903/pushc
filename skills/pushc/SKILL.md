@@ -47,42 +47,66 @@ Add `--config <path>` only when the user supplies or selects a non-default confi
 
 ### `pushc send`
 
-Prerequisite: know the intended destination from `pushc targets` and have non-empty message content.
-For a real send, also require user intent to perform the external side effect. Always pass
-`--target <adapter[:target]>`.
+Prerequisite: know the intended destination from `pushc targets` and have non-empty message content
+or at least one attachment. For a real send, also require user intent to perform the external side
+effect.
 
-Send a short message:
+Send a basic message:
 
 ```bash
 pushc send --target alerts:release "Build completed"
 ```
 
-Add a title and string extension parameters when the configured webhook templates use them:
+Always pass `--target <adapter[:target]>`. A destination without a colon selects that adapter's
+default target and does not select its sole named target.
+
+Add `--title` when the configured destination uses a title. Do not use titles to pass secrets:
 
 ```bash
-pushc send --target alerts:release --title "Build completed" \
-  --param group=deployments --param level=active "Production deployment succeeded"
+pushc send --target alerts:release --title "Build completed" "Production deployment succeeded"
 ```
 
-For a longer message, use a UTF-8 file or piped stdin:
+Add string extension parameters with `--param key=value` when the configured destination uses them.
+Repeat the complete option for every entry, and do not use params to pass secrets:
+
+```bash
+pushc send --target alerts:release \
+  --param group=deployments \
+  --param level=active \
+  "Production deployment succeeded"
+```
+
+When the selected destination supports attachments, send local files or HTTP(S) sources with or
+without a message. Repeat the complete `--attachment <source>` option for every source.
+
+```bash
+pushc send --target alerts:release --attachment ./screenshot.png "Build completed"
+pushc send --target alerts:release \
+  --attachment ./report.pdf \
+  --attachment https://example.com/release-notes.txt
+```
+
+Attachment support and source interpretation depend on the selected destination, so do not assume
+unsupported behavior. Do not place credentials in attachment URLs or invent attachment paths; use
+only sources the user supplied or explicitly selected.
+
+Add `--dry-run` when the user asks to preview or validate a send:
+
+```bash
+pushc send --target alerts:release --dry-run "Build completed"
+```
+
+A successful dry-run means the send was prepared, not performed. Attachment preparation follows the
+selected destination's rules.
+
+For longer message content, use a UTF-8 file or piped stdin:
 
 ```bash
 pushc send --target alerts:release --file ./report.txt
 git log -1 | pushc send --target alerts:release
 ```
 
-Do not combine positional content with `--file`. Always provide `--target`; a destination without a
-colon selects that adapter's default target and does not select its sole named target. `--param`
-entries use `key=value`; do not use title or params to pass secrets.
-
-Preview the final send without performing it:
-
-```bash
-pushc send --target alerts:release --dry-run "Build completed"
-```
-
-Use dry-run when the user asks to preview or validate a send. A successful dry-run means the send
-was prepared, not performed; pushc does not contact the destination.
+Do not combine positional content with `--file`.
 
 Read [reference/cli.md](reference/cli.md) when exact command behavior, output schemas, config
 resolution, input rules, exit status, or troubleshooting details matter.

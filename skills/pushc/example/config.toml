@@ -106,6 +106,7 @@ type = "napcat"
 base_url = "${NAPCAT_BASE_URL}" # Not a credential; a local/public endpoint may be inline.
 access_token = "${NAPCAT_ACCESS_TOKEN}" # Credential; keep outside config.toml.
 timeout_ms = 10000
+max_attachment_bytes = 33554432
 
 [adapters.qq.targets.group]
 group_id = "${NAPCAT_GROUP_ID}" # Destination ID, not a credential; a literal value is allowed.

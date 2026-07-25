@@ -27,8 +27,9 @@ cli
   .command('send [...content]', 'Send a message to a configured target')
   .option('-t, --target <destination>', 'Select a destination as adapter[:target]')
   .option('-f, --file <path>', 'Read message content from a UTF-8 file')
-  .option('--title <title>', 'Set an optional message title')
+  .option('-a, --attachment [...source]', 'Attach local files or HTTP(S) URLs')
   .option('-p, --param [...entry]', 'Set string payload parameters as key=value')
+  .option('--title <title>', 'Set an optional message title')
   .option('--dry-run', 'Prepare the final request without sending')
   .action(async (content, options, ctx) => {
     let destination: string;
@@ -54,15 +55,24 @@ cli
     try {
       let result: PushResult | PushDryRunResult;
       try {
+        const attachments =
+          options.attachment === undefined || options.attachment.length === 0
+            ? undefined
+            : options.attachment;
+
         const message = await resolveMessage({
           content,
-          ...(options.file ? { file: options.file } : {})
+          ...(options.file ? { file: options.file } : {}),
+          allowEmpty: attachments !== undefined
         });
+
         const payload = {
           message,
+          ...(attachments === undefined ? {} : { attachments }),
           ...(options.title === undefined ? {} : { title: options.title }),
           ...(param === undefined ? {} : { param })
         };
+
         result = options.dryRun
           ? await runtime.client.send(destination, payload, { dryRun: true })
           : await runtime.client.send(destination, payload);

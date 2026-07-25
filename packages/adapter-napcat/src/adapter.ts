@@ -1,32 +1,42 @@
 import { addAbortListener } from 'node:events';
 import {
   PushAdapter,
-  type PushAdapterSendResult,
+  type PushAdapterOperationOptions,
+  type PushDispatchResult,
   type PushPayload,
-  type PushSendOptions
+  type PushPreparedRequest
 } from '@pushc/core';
 
 import type {
   CreateNapCatAdapterOptions,
   NapCatConfig,
-  NapCatReceipt,
   NapCatRequestReceipt,
-  NapCatSendMessageParams,
-  NapCatTargetConfig
+  NapCatResponseReceipt,
+  NapCatTargetConfig,
+  NapCatTransportRequest
 } from './types.js';
 
 import { NapCatConnection } from './client.js';
 import { parseNapCatConfig } from './config.js';
+import { prepareNapCatRequest, updateNapCatRemoteMediaTypes } from './request.js';
 import { napCatTargetDefaults, parseNapCatTarget, parseNapCatTargetPartial } from './target.js';
 
-export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig, NapCatReceipt> {
+export class NapCatAdapter extends PushAdapter<
+  NapCatConfig,
+  NapCatTargetConfig,
+  NapCatRequestReceipt,
+  NapCatResponseReceipt,
+  NapCatTransportRequest
+> {
   readonly #connection: NapCatConnection;
+  readonly #fetch: typeof globalThis.fetch;
   readonly #targetDefaults: Readonly<Record<string, unknown>>;
 
   public constructor(config: unknown, options: CreateNapCatAdapterOptions = {}) {
     super(parseNapCatConfig(config));
     this.#targetDefaults = napCatTargetDefaults(config);
     this.#connection = new NapCatConnection(this.config, options.factory);
+    this.#fetch = options.fetch ?? globalThis.fetch;
   }
 
   public parseTarget(input: unknown): NapCatTargetConfig {
@@ -36,24 +46,23 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
     });
   }
 
-  protected prepareRequest(target: NapCatTargetConfig, payload: PushPayload): NapCatRequestReceipt {
-    const params: NapCatSendMessageParams = {
-      ...('user_id' in target
-        ? { user_id: Number(target.user_id) }
-        : { group_id: Number(target.group_id) }),
-      message: [{ type: 'text', data: { text: payload.message } }]
-    };
-    const request: NapCatRequestReceipt = {
-      method: 'send_msg',
-      params
-    };
-    return request;
+  protected async prepareRequest(
+    target: NapCatTargetConfig,
+    payload: PushPayload,
+    options: PushAdapterOperationOptions
+  ): Promise<PushPreparedRequest<NapCatRequestReceipt, NapCatTransportRequest>> {
+    return await prepareNapCatRequest(
+      target,
+      payload,
+      this.config.max_attachment_bytes,
+      options.signal
+    );
   }
 
-  protected async sendRequest(
-    request: NapCatRequestReceipt,
-    options: Readonly<PushSendOptions>
-  ): Promise<PushAdapterSendResult<NapCatReceipt>> {
+  protected async dispatchRequest(
+    prepared: PushPreparedRequest<NapCatRequestReceipt, NapCatTransportRequest>,
+    options: PushAdapterOperationOptions
+  ): Promise<PushDispatchResult<NapCatRequestReceipt, NapCatResponseReceipt>> {
     const timeoutSignal = AbortSignal.timeout(this.config.timeout_ms);
     const operationSignal = AbortSignal.any([
       ...(options.signal ? [options.signal] : []),
@@ -66,26 +75,34 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
     if (operationSignal.aborted) abortOperation();
 
     try {
+      await Promise.race([
+        aborted.promise,
+        updateNapCatRemoteMediaTypes(this.#fetch, prepared, operationSignal)
+      ]);
+
       const client = await Promise.race([aborted.promise, this.#connection.connect()]);
-      const response = await Promise.race([aborted.promise, client.send_msg(request.params)]);
+
+      const response = await Promise.race([
+        aborted.promise,
+        client.send_msg(prepared.transportRequest.params)
+      ]);
+
       const messageId = String(response.message_id);
       const recipient =
-        'user_id' in request.params
-          ? `user ${request.params.user_id}`
-          : `group ${request.params.group_id}`;
+        'user_id' in prepared.transportRequest.params
+          ? `user ${prepared.transportRequest.params.user_id}`
+          : `group ${prepared.transportRequest.params.group_id}`;
 
       return {
         success: true,
-        receipt: {
-          summary: `NapCat sent a message to ${recipient} (message ID: ${messageId}).`,
-          request,
-          response: { messageId }
-        }
+        request: prepared.receiptRequest,
+        summary: `NapCat sent a message to ${recipient} (message ID: ${messageId}).`,
+        response: { messageId }
       };
     } catch (error) {
       return {
         success: false,
-        receipt: { request },
+        request: prepared.receiptRequest,
         error: {
           code: 'SEND_FAILED',
           message:

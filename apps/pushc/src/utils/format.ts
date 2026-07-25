@@ -24,7 +24,7 @@ export function formatSendResult(
   json: boolean,
   redactions: readonly string[] = []
 ): string {
-  if ('dryRun' in result && result.dryRun) {
+  if (result.dryRun === true) {
     return formatDryRunResult(result, json, redactions);
   }
 

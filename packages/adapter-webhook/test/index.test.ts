@@ -417,6 +417,29 @@ describe('webhook templates and requests', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('rejects attachments without calling fetch in send or dry-run', async () => {
+    const fetch = okFetch();
+    const adapter = new WebhookAdapter({ url: 'https://example.com/hook' }, { fetch });
+    const payload = { message: '', attachments: ['photo.png'] };
+
+    await expect(adapter.send(undefined, payload)).resolves.toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_MESSAGE',
+        message: 'Webhook does not support attachments.'
+      }
+    });
+    await expect(adapter.send(undefined, payload, { dryRun: true })).resolves.toMatchObject({
+      dryRun: true,
+      success: false,
+      error: {
+        code: 'INVALID_MESSAGE',
+        message: 'Webhook does not support attachments.'
+      }
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('scans once, supports fallback, and preserves invalid expressions', () => {
     const payload = {
       message: '{{title}}',
@@ -643,7 +666,7 @@ describe('webhook errors and lifecycle', () => {
     controller.abort(new Error('cancelled'));
     await expect(pending).resolves.toMatchObject({
       success: false,
-      error: { code: 'SEND_FAILED', message: 'Webhook request was aborted.' }
+      error: { code: 'SEND_FAILED', message: 'Message sending was aborted.' }
     });
   });
 

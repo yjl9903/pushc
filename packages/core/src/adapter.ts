@@ -1,7 +1,10 @@
 import type {
+  PushAdapterOperationOptions,
   PushAdapterDryRunResult,
   PushAdapterSendResult,
+  PushDispatchResult,
   PushPayload,
+  PushPreparedRequest,
   PushReceipt,
   PushSendOptions,
   PushTargetInput
@@ -14,7 +17,9 @@ import { normalizePayload, normalizeSendOptions } from './validation.js';
 export abstract class PushAdapter<
   TConfig = unknown,
   TTarget extends object = Record<string, unknown>,
-  TReceipt extends PushReceipt = PushReceipt
+  TReceiptRequest = unknown,
+  TReceiptResponse = unknown,
+  TTransportRequest = TReceiptRequest
 > {
   readonly config: TConfig;
   readonly targets: PushTargets<TTarget>;
@@ -28,62 +33,118 @@ export abstract class PushAdapter<
 
   public abstract parseTarget(input: unknown): TTarget;
 
-  protected abstract prepareRequest(target: TTarget, payload: PushPayload): TReceipt['request'];
+  protected abstract prepareRequest(
+    target: TTarget,
+    payload: PushPayload,
+    options: PushAdapterOperationOptions
+  ): Promise<PushPreparedRequest<TReceiptRequest, TTransportRequest>>;
 
-  protected abstract sendRequest(
-    request: TReceipt['request'],
-    options: Readonly<PushSendOptions>
-  ): Promise<PushAdapterSendResult<TReceipt>>;
+  protected abstract dispatchRequest(
+    prepared: PushPreparedRequest<TReceiptRequest, TTransportRequest>,
+    options: PushAdapterOperationOptions
+  ): Promise<PushDispatchResult<TReceiptRequest, TReceiptResponse>>;
+
+  async #dispatch(
+    prepared: PushPreparedRequest<TReceiptRequest, TTransportRequest>,
+    options: PushAdapterOperationOptions
+  ): Promise<PushAdapterSendResult<PushReceipt<TReceiptRequest, TReceiptResponse>>> {
+    try {
+      const result = await this.dispatchRequest(prepared, options);
+
+      const receipt: PushReceipt<TReceiptRequest, TReceiptResponse> = {
+        request: result.request ?? prepared.receiptRequest,
+        ...(result.response === undefined ? {} : { response: result.response }),
+        ...(result.success && result.summary !== undefined ? { summary: result.summary } : {})
+      };
+
+      if (result.success) {
+        return { success: true, receipt };
+      } else {
+        return {
+          success: false,
+          receipt,
+          error: {
+            code: result.error.code,
+            message: result.error.message
+          }
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        receipt: { request: prepared.receiptRequest },
+        error: {
+          code: 'SEND_FAILED',
+          message:
+            error instanceof Error && error.message ? error.message : 'Message sending failed.'
+        }
+      };
+    }
+  }
 
   public async send(
     target: PushTargetInput | undefined,
     payload: PushPayload,
     options: PushSendOptions & { readonly dryRun: true }
-  ): Promise<PushAdapterDryRunResult<TReceipt>>;
+  ): Promise<PushAdapterDryRunResult<PushReceipt<TReceiptRequest, TReceiptResponse>>>;
   public async send(
     target: PushTargetInput | undefined,
     payload: PushPayload,
     options?: PushSendOptions & { readonly dryRun?: false }
-  ): Promise<PushAdapterSendResult<TReceipt>>;
+  ): Promise<PushAdapterSendResult<PushReceipt<TReceiptRequest, TReceiptResponse>>>;
   public async send(
     target: PushTargetInput | undefined,
     payload: PushPayload,
     options?: PushSendOptions
-  ): Promise<PushAdapterSendResult<TReceipt> | PushAdapterDryRunResult<TReceipt>>;
+  ): Promise<
+    | PushAdapterSendResult<PushReceipt<TReceiptRequest, TReceiptResponse>>
+    | PushAdapterDryRunResult<PushReceipt<TReceiptRequest, TReceiptResponse>>
+  >;
   public async send(
     target: PushTargetInput | undefined,
     payload: PushPayload,
     options?: PushSendOptions
-  ): Promise<PushAdapterSendResult<TReceipt> | PushAdapterDryRunResult<TReceipt>> {
+  ): Promise<
+    | PushAdapterSendResult<PushReceipt<TReceiptRequest, TReceiptResponse>>
+    | PushAdapterDryRunResult<PushReceipt<TReceiptRequest, TReceiptResponse>>
+  > {
     const dryRun = options?.dryRun === true;
+    let prepared: PushPreparedRequest<TReceiptRequest, TTransportRequest> | undefined;
 
     try {
       const normalizedPayload = normalizePayload(payload);
       const normalizedOptions = normalizeSendOptions(options);
-      if (normalizedOptions.signal?.aborted) {
-        throw new PushError('SEND_FAILED', 'Message sending was aborted.', {
-          cause: normalizedOptions.signal.reason
-        });
-      }
+      assertNotAborted(normalizedOptions.signal);
+      const operationOptions: PushAdapterOperationOptions = Object.freeze({
+        ...(normalizedOptions.signal === undefined ? {} : { signal: normalizedOptions.signal })
+      });
 
-      const request = this.prepareRequest(this.targets.resolve(target), normalizedPayload);
+      prepared = await this.prepareRequest(
+        this.targets.resolve(target),
+        normalizedPayload,
+        operationOptions
+      );
+      assertNotAborted(normalizedOptions.signal);
+
       if (dryRun) {
-        return { dryRun: true, success: true, receipt: { request } };
+        return {
+          dryRun: true,
+          success: true,
+          receipt: { request: prepared.receiptRequest }
+        };
       } else {
-        return await this.sendRequest(request, normalizedOptions);
+        return await this.#dispatch(prepared, operationOptions);
       }
     } catch (error) {
       const failure = {
-        success: false as const,
-        error: {
-          code: error instanceof PushError ? error.code : 'SEND_FAILED',
-          message:
-            error instanceof Error && error.message
-              ? error.message
-              : dryRun
-                ? 'Message preparation failed.'
-                : 'Message sending failed.'
-        }
+        ...preparationFailure(error, dryRun),
+        ...(prepared === undefined
+          ? {}
+          : {
+              receipt: {
+                request: prepared.receiptRequest
+              }
+            })
       };
 
       if (dryRun) {
@@ -93,4 +154,26 @@ export abstract class PushAdapter<
       }
     }
   }
+}
+
+function assertNotAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) return;
+  throw new PushError('SEND_FAILED', 'Message sending was aborted.', {
+    cause: signal.reason
+  });
+}
+
+function preparationFailure(error: unknown, dryRun: boolean) {
+  return {
+    success: false as const,
+    error: {
+      code: error instanceof PushError ? error.code : 'SEND_FAILED',
+      message:
+        error instanceof Error && error.message
+          ? error.message
+          : dryRun
+            ? 'Message preparation failed.'
+            : 'Message sending failed.'
+    }
+  };
 }

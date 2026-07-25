@@ -18,7 +18,8 @@ import { NapCatAdapter } from '@pushc/adapter-napcat';
 
 const adapter = new NapCatAdapter({
   base_url: 'ws://127.0.0.1:3001',
-  access_token: process.env.NAPCAT_TOKEN
+  access_token: process.env.NAPCAT_TOKEN,
+  max_attachment_bytes: 32 * 1024 * 1024
 });
 
 await adapter.send(
@@ -26,7 +27,8 @@ await adapter.send(
     group_id: '123456789'
   },
   {
-    message: 'Build completed'
+    message: 'Build completed',
+    attachments: ['./screenshot.png', 'https://example.com/report.pdf']
   }
 );
 

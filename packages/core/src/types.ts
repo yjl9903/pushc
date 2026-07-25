@@ -1,11 +1,16 @@
 export interface PushPayload {
   readonly message: string;
+  readonly attachments?: readonly string[];
   readonly title?: string;
   readonly param?: Readonly<Record<string, string>>;
 }
 
 export interface PushSendOptions {
   readonly dryRun?: boolean;
+  readonly signal?: AbortSignal;
+}
+
+export interface PushAdapterOperationOptions {
   readonly signal?: AbortSignal;
 }
 
@@ -24,44 +29,73 @@ export interface PushReceipt<TRequest = unknown, TResponse = unknown> {
   readonly summary?: string;
 }
 
+export interface PushPreparedRequest<TReceiptRequest, TTransportRequest> {
+  readonly receiptRequest: TReceiptRequest;
+  readonly transportRequest: TTransportRequest;
+}
+
 export interface PushResultError {
   readonly code: string;
   readonly message: string;
 }
 
-export type PushAdapterSendResult<TReceipt extends PushReceipt = PushReceipt> =
+export type PushDispatchResult<TRequest = never, TResponse = unknown> =
   | {
       readonly success: true;
-      readonly receipt: TReceipt;
+      readonly request?: TRequest;
+      readonly response?: TResponse;
+      readonly summary?: string;
     }
   | {
       readonly success: false;
-      readonly receipt?: TReceipt;
+      readonly request?: TRequest;
+      readonly response?: TResponse;
       readonly error: PushResultError;
     };
 
-export type PushAdapterDryRunResult<TReceipt extends PushReceipt = PushReceipt> =
-  PushAdapterSendResult<Pick<TReceipt, 'request'>> & {
-    readonly dryRun: true;
-  };
+export interface PushAdapterSuccessResult<TReceipt extends PushReceipt = PushReceipt> {
+  readonly success: true;
+  readonly receipt: TReceipt;
+}
 
-export type PushResult<TReceipt extends PushReceipt = PushReceipt> =
-  | {
-      readonly success: true;
-      readonly adapter: string;
-      readonly target?: string;
-      readonly receipt: TReceipt;
-    }
-  | {
-      readonly success: false;
-      readonly adapter?: string;
-      readonly target?: string;
-      readonly receipt?: TReceipt;
-      readonly error: PushResultError;
-    };
+export interface PushAdapterFailureResult<TReceipt extends PushReceipt = PushReceipt> {
+  readonly success: false;
+  readonly receipt?: TReceipt;
+  readonly error: PushResultError;
+}
 
-export type PushDryRunResult<TReceipt extends PushReceipt = PushReceipt> = PushResult<
-  Pick<TReceipt, 'request' | 'summary'>
-> & {
+export type PushAdapterSendResult<TReceipt extends PushReceipt = PushReceipt> = (
+  PushAdapterSuccessResult<TReceipt> | PushAdapterFailureResult<TReceipt>
+) & {
+  readonly dryRun?: never;
+};
+
+export type PushAdapterDryRunResult<TReceipt extends PushReceipt = PushReceipt> = (
+  | PushAdapterSuccessResult<Pick<TReceipt, 'request'>>
+  | PushAdapterFailureResult<Pick<TReceipt, 'request'>>
+) & {
   readonly dryRun: true;
 };
+
+export interface PushSuccessResult<TReceipt extends PushReceipt = PushReceipt> {
+  readonly success: true;
+  readonly adapter: string;
+  readonly target?: string;
+  readonly receipt: TReceipt;
+}
+
+export interface PushFailureResult<TReceipt extends PushReceipt = PushReceipt> {
+  readonly success: false;
+  readonly adapter?: string;
+  readonly target?: string;
+  readonly receipt?: TReceipt;
+  readonly error: PushResultError;
+}
+
+export type PushResult<TReceipt extends PushReceipt = PushReceipt> = (
+  PushSuccessResult<TReceipt> | PushFailureResult<TReceipt>
+) & { readonly dryRun?: never };
+
+export type PushDryRunResult<TReceipt extends PushReceipt = PushReceipt> = (
+  PushSuccessResult<Pick<TReceipt, 'request'>> | PushFailureResult<Pick<TReceipt, 'request'>>
+) & { readonly dryRun: true };

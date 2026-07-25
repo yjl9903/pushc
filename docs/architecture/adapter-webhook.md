@@ -58,8 +58,8 @@ scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非�
 
 ## Request 构造
 
-`prepareRequest(target, payload)` 从 `target.request` 每次建立 request-local headers Map 与
-JSON tree：
+异步 `prepareRequest(target, payload)` 先拒绝包含 attachments 的 payload，再从
+`target.request` 每次建立 request-local headers Map 与 JSON tree：
 
 1. 渲染 request URL、header value 和 body string value。
 2. 校验最终绝对 HTTP(S) URL、credentials 与 adapter origin。
@@ -68,30 +68,33 @@ JSON tree：
 5. body 不存在时省略 Fetch body，不自动生成或解析 Content-Type。
 6. 最终 header value 由 `new Headers([...map])` 校验。
 7. GET/HEAD 只允许 body 为 `undefined`。
-8. `WebhookRequest` 携带 resolved `timeout_ms`；`sendRequest` 才启动 timeout，
+8. `WebhookRequest` 携带 resolved `timeout_ms`；`dispatchRequest` 才启动 timeout，
    组合 parent signal 并调用 Fetch；所有出口清理 timer/listener。
 
-`send(..., { dryRun: true })` 只执行 `prepareRequest`，返回只含最终 request 的 receipt，不调用
-Fetch。
-正常 send 将同一 request 传给 `sendRequest`，因此 dry run 与 receipt request 不维护重复转换
-逻辑。
+preparation 返回同一个规范化 request 作为 `receiptRequest` 与 `transportRequest`。
+`send(..., { dryRun: true })` 只执行本地 preparation，返回只含最终 request 的 receipt，不创建
+timeout 或调用 Fetch。正常 send 将 prepared request 传给 `dispatchRequest`，因此 dry run 与
+receipt request 不维护重复转换逻辑。Webhook 不支持 attachments，统一返回
+`INVALID_MESSAGE`，不静默忽略或隐式生成 multipart。
 
-Webhook 以 `response.ok`（HTTP 200–299）判断成功，不增加 retry。统一 receipt request
+Webhook 以 `response.ok`（HTTP 200–299）判断成功，不增加 retry。dispatch 返回 response、
+summary 或 error，由 core 统一组装 receipt。receipt request
 记录最终 URL、method、经 `Headers` 规范化后的 headers、content type、timeout 和渲染后的
 body；Fetch 使用同一份规范化 header record，JSON body 保留序列化前的 `JsonValue`，实际
 Fetch body 从同一值生成。response 记录 status、过滤常见鉴权字段后的 headers，并 best-effort
 解析 JSON body。成功 summary 记录 method、最终 URL 的 host 和 HTTP status。非 2xx、Fetch
-不可用、timeout、取消和 transport error 在请求形成后返回包含 receipt 的失败 outcome。
+不可用、timeout、取消和 transport error 在请求形成后返回包含 receipt 的失败 result。
 
 ## 错误边界
 
 配置与 send-time request 构造错误使用 sanitized `WebhookError('INVALID_CONFIG')`，保留
 cause，不在 public message 中包含 URL、header 或 body。`parseTarget` 和 `prepareRequest`
 分别将该错误映射为 `PushError('INVALID_CONFIG')`，确保 adapter、client 与 CLI 一致。
-transport、HTTP 和 abort 错误转换为统一失败 outcome，不做配置错误映射。
+transport、HTTP 和 abort 错误转换为统一失败 result，不做配置错误映射。
 
 ## 测试边界
 
 测试覆盖配置默认矩阵、target merge、特殊 key、JSON normalization、模板 scanner、URL
 origin、Content-Type/serializer、method/body、timeout/abort cleanup、并发请求隔离、错误映射、
-严格空 response 占位、dry run 无 Fetch、response receipt 与 fetch unavailable。
+attachments 明确拒绝、严格空 response 占位、dry run 无 Fetch、response receipt 与 fetch
+unavailable。

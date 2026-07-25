@@ -122,6 +122,7 @@ type = "napcat"
 base_url = "ws://127.0.0.1:3001"
 access_token = "${NAPCAT_TOKEN}"
 timeout_ms = 10000
+max_attachment_bytes = 33554432
 
 [adapters.qq.targets.ops-group]
 group_id = "123456789"
@@ -135,6 +136,9 @@ Adapter fields:
 - `base_url` (required): `ws://` or `wss://` URL.
 - `access_token`: optional NapCat access token.
 - `timeout_ms`: positive integer, default `10000`.
+- `max_attachment_bytes`: positive integer limiting the total original bytes of local attachments
+  in one message, default `33554432` (32 MiB). Remote URLs are not included because pushc does not
+  download them.
 - `user_id` or `group_id`: optional adapter-level default destination.
 
 Each resolved destination must contain exactly one of `user_id` or `group_id`. IDs contain decimal

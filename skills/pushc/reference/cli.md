@@ -79,8 +79,8 @@ options, target options, URLs, or tokens.
 ## `send`
 
 ```bash
-pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] [--dry-run] [...content]
-pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] [--dry-run] --file <path>
+pushc send --target <adapter[:target]> [--title <title>] [--param key=value] [--attachment <source>] [--dry-run] [...content]
+pushc send --target <adapter[:target]> [--title <title>] [--param key=value] [--attachment <source>] [--dry-run] --file <path>
 <producer> | pushc send --target <adapter[:target]> [--dry-run]
 ```
 
@@ -89,26 +89,49 @@ letters, digits, `_`, or `-`. At most one colon is allowed. `qq:ops` selects nam
 adapter `qq`; `qq` selects the adapter's default target. Omitting a target does not fall back to the
 only named target.
 
+`--title` supplies the optional public title field.
+
+`--param key=value` may be repeated and supplies a flat string map. Repeat the complete option for
+every entry:
+
+```bash
+--param key1=value --param key2=value --param key3=value
+```
+
+Each entry is split at its first `=`; an empty value is valid, additional `=` characters belong to
+the value, and key/value are not trimmed. Keys match `[A-Za-z0-9][A-Za-z0-9_.-]*` and are
+case-sensitive. Missing `=`, invalid/empty keys, and duplicate keys fail with `CLI_USAGE`. Title and
+params are not credential channels.
+
+`-a, --attachment <source>` may be repeated and preserves source order and duplicates. NapCat
+accepts local paths and HTTP(S) URLs; relative paths resolve from the current working directory.
+Repeat the complete option for every source:
+
+```bash
+--attachment ./first.png --attachment https://example.com/second.pdf
+```
+
+Local files are read, size-limited, Base64-encoded for transport, and represented in receipts only
+by filename, MIME type, size, and SHA-256. Remote URLs are passed to NapCat and represented without
+their path, query, or credentials. A real send probes remote MIME types with bounded concurrent HEAD
+requests before connecting. Attachment segments precede the optional text segment. Webhook
+destinations reject any non-empty attachment list.
+
+`--dry-run` performs the same configuration, destination, target, payload, and local preparation as
+a real send, then returns the prepared send without performing it. With NapCat attachments it reads,
+encodes, and hashes local files, but does not probe remote URLs, connect, upload, or contact the
+destination. A successful dry-run means the send is ready, not completed.
+
 Message source precedence and validation:
 
 1. One or more positional content words are joined with a single space.
 2. Otherwise, `-f, --file <path>` reads the file as UTF-8.
 3. Otherwise, non-TTY stdin is read to completion.
-4. With TTY stdin and no other source, or when the resolved message is whitespace-only, the command
-   fails.
+4. With one or more attachments, an empty message from any source is valid; otherwise, TTY stdin
+   with no other source or a whitespace-only resolved message fails.
 
 Positional content and `--file` are mutually exclusive. File and stdin content are not trimmed
-before sending, but every source must contain at least one non-whitespace character.
-
-`--title` supplies the optional public title field. `--param` may be repeated and supplies a flat
-string map. Each entry is split at its first `=`; an empty value is valid, additional `=` characters
-belong to the value, and key/value are not trimmed. Keys match
-`[A-Za-z0-9][A-Za-z0-9_.-]*` and are case-sensitive. Missing `=`, invalid/empty keys, and duplicate
-keys fail with `CLI_USAGE`. These options are not credential channels.
-
-`--dry-run` performs the same configuration, destination, target, payload, and final send validation
-as a real send, then returns the prepared send without performing it. A successful dry-run means the
-send is ready, not completed; pushc does not contact the destination.
+before sending.
 
 Text success examples:
 
@@ -233,8 +256,9 @@ Exit statuses:
 
 Common codes include `CLI_USAGE`, `CONFIG_NOT_FOUND`, `CONFIG_READ_FAILED`, `CONFIG_INVALID`,
 `ENV_MISSING`, `INVALID_CONFIG`, `UNKNOWN_ADAPTER`, `INVALID_TARGET`, `ADAPTER_NOT_FOUND`,
-`TARGET_NOT_FOUND`, `MESSAGE_SOURCE_CONFLICT`, `MESSAGE_FILE_FAILED`, `MESSAGE_EMPTY`, and
-`SEND_FAILED`. Adapter-specific send failures can be surfaced through `SEND_FAILED` messages.
+`TARGET_NOT_FOUND`, `MESSAGE_SOURCE_CONFLICT`, `MESSAGE_FILE_FAILED`, `MESSAGE_EMPTY`,
+`INVALID_MESSAGE`, and `SEND_FAILED`. Adapter-specific send failures can be surfaced through
+`SEND_FAILED` messages.
 
 ## Operational behavior
 

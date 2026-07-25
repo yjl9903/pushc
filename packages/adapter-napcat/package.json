@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@pushc/core": "workspace:*",
+    "mime": "^4.1.0",
     "node-napcat-ts": "^0.4.25"
   },
   "engines": {

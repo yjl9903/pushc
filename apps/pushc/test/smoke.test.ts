@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -135,6 +136,76 @@ describe('built CLI', () => {
     }
   });
 
+  it('prepares repeatable local and remote attachments without sending to NapCat', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-attachment-dry-run-'));
+    const config = join(root, 'config.toml');
+    const image = join(root, 'photo.png');
+    const document = join(root, 'report.txt');
+    await writeFile(
+      config,
+      [
+        '[adapters.qq]',
+        'type = "napcat"',
+        'base_url = "ws://127.0.0.1:1"',
+        '[adapters.qq.targets.ops]',
+        'group_id = "123"'
+      ].join('\n')
+    );
+    await writeFile(image, 'image');
+    await writeFile(document, 'report');
+
+    try {
+      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [
+          cli,
+          'send',
+          '--target',
+          'qq:ops',
+          '--attachment',
+          image,
+          '--attachment',
+          document,
+          '--attachment',
+          'https://cdn.example.com/clip.mp4?token=secret',
+          '--dry-run',
+          '--config',
+          config,
+          '--json'
+        ],
+        { encoding: 'utf8' }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(JSON.parse(result.stdout)).toEqual({
+        dryRun: true,
+        success: true,
+        adapter: 'qq',
+        target: 'ops',
+        receipt: {
+          request: {
+            method: 'send_msg',
+            params: {
+              group_id: 123,
+              message: [
+                attachmentReceipt('image', 'photo.png', 'image/png', 'image'),
+                attachmentReceipt('file', 'report.txt', 'text/plain', 'report'),
+                remoteAttachmentReceipt('video', 'clip.mp4', 'video/mp4', 'cdn.example.com')
+              ]
+            }
+          }
+        }
+      });
+      expect(result.stdout).not.toContain(root);
+      expect(result.stdout).not.toContain('base64://');
+      expect(result.stdout).not.toContain('token=secret');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('registers the targets command at the executable entry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pushc-smoke-'));
     const config = join(root, 'config.toml');
@@ -171,3 +242,38 @@ describe('built CLI', () => {
     }
   });
 });
+
+function attachmentReceipt(
+  type: 'image' | 'file',
+  name: string,
+  mediaType: string,
+  contents: string
+) {
+  return {
+    type,
+    data: {
+      name,
+      media_type: mediaType,
+      size: Buffer.byteLength(contents),
+      sha256: createHash('sha256').update(contents).digest('hex'),
+      encoding: 'base64'
+    }
+  };
+}
+
+function remoteAttachmentReceipt(
+  type: 'image' | 'video' | 'file',
+  name: string,
+  mediaType: string,
+  host: string
+) {
+  return {
+    type,
+    data: {
+      name,
+      media_type: mediaType,
+      host,
+      encoding: 'url'
+    }
+  };
+}

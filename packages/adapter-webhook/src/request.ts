@@ -1,11 +1,10 @@
-import type { PushAdapterSendResult, PushPayload, PushSendOptions } from '@pushc/core';
+import type { PushAdapterOperationOptions, PushDispatchResult, PushPayload } from '@pushc/core';
 
 import { invalidConfig, parseContentType } from './config.js';
 import { WebhookError } from './error.js';
 import { renderWebhookBody, renderWebhookTemplate } from './target.js';
 import type {
   JsonValue,
-  WebhookReceipt,
   WebhookRequestConfig,
   WebhookRequestReceipt,
   WebhookResponseReceipt
@@ -79,10 +78,10 @@ export function buildWebhookRequest(
 export async function sendWebhook(
   fetch: typeof globalThis.fetch,
   request: WebhookRequestReceipt,
-  options: Readonly<PushSendOptions>
-): Promise<PushAdapterSendResult<WebhookReceipt>> {
+  options: PushAdapterOperationOptions
+): Promise<PushDispatchResult<never, WebhookResponseReceipt>> {
   if (typeof fetch !== 'function') {
-    return failure(request, 'This runtime does not provide fetch.');
+    return failure('This runtime does not provide fetch.');
   }
 
   const requestAbort = requestSignal(options.signal, request.timeout_ms);
@@ -103,45 +102,34 @@ export async function sendWebhook(
     });
     const responseReceipt = await readResponse(response);
     if (!response.ok) {
-      return failure(request, `Webhook returned HTTP ${response.status}.`, responseReceipt);
+      return failure(`Webhook returned HTTP ${response.status}.`, responseReceipt);
     }
     return {
       success: true,
-      receipt: {
-        summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
-        request,
-        response: responseReceipt
-      }
+      summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
+      response: responseReceipt
     };
   } catch (error) {
     if (requestAbort.signal.aborted) {
       return failure(
-        request,
         requestAbort.signal.reason === timeoutReason
           ? `Webhook request timed out after ${request.timeout_ms}ms.`
           : 'Webhook request was aborted.'
       );
     }
-    return failure(
-      request,
-      error instanceof WebhookError ? error.message : 'Webhook request failed.'
-    );
+    return failure(error instanceof WebhookError ? error.message : 'Webhook request failed.');
   } finally {
     requestAbort.cleanup();
   }
 }
 
 function failure(
-  request: WebhookRequestReceipt,
   message: string,
   response?: WebhookResponseReceipt
-): PushAdapterSendResult<WebhookReceipt> {
+): PushDispatchResult<never, WebhookResponseReceipt> {
   return {
     success: false,
-    receipt: {
-      request,
-      ...(response === undefined ? {} : { response })
-    },
+    ...(response === undefined ? {} : { response }),
     error: { code: 'SEND_FAILED', message }
   };
 }

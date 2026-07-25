@@ -1,26 +1,29 @@
 import {
   PushAdapter,
   PushError,
-  type PushAdapterSendResult,
+  type PushAdapterOperationOptions,
+  type PushDispatchResult,
   type PushPayload,
-  type PushSendOptions
+  type PushPreparedRequest
 } from '@pushc/core';
 
 import type {
   CreateWebhookAdapterOptions,
   WebhookConfig,
-  WebhookReceipt,
+  WebhookRequestReceipt,
+  WebhookResponseReceipt,
   WebhookTargetConfig
 } from './types.js';
 
+import { WebhookError } from './error.js';
 import { buildWebhookRequest, sendWebhook } from './request.js';
 import { parseWebhookConfig, parseWebhookTargetPartial, resolveWebhookTarget } from './config.js';
-import { WebhookError } from './error.js';
 
 export class WebhookAdapter extends PushAdapter<
   WebhookConfig,
   WebhookTargetConfig,
-  WebhookReceipt
+  WebhookRequestReceipt,
+  WebhookResponseReceipt
 > {
   readonly #fetch: typeof globalThis.fetch;
   readonly #origin: string;
@@ -43,24 +46,31 @@ export class WebhookAdapter extends PushAdapter<
     }
   }
 
-  protected prepareRequest(
+  protected async prepareRequest(
     target: WebhookTargetConfig,
-    payload: PushPayload
-  ): WebhookReceipt['request'] {
+    payload: PushPayload,
+    _options: PushAdapterOperationOptions
+  ): Promise<PushPreparedRequest<WebhookRequestReceipt, WebhookRequestReceipt>> {
     try {
-      return buildWebhookRequest(target.request, this.#origin, payload);
+      if (payload.attachments !== undefined) {
+        throw new PushError('INVALID_MESSAGE', 'Webhook does not support attachments.');
+      }
+
+      const request = buildWebhookRequest(target.request, this.#origin, payload);
+      return { receiptRequest: request, transportRequest: request };
     } catch (error) {
       if (error instanceof WebhookError && error.code === 'INVALID_CONFIG') {
         throw new PushError('INVALID_CONFIG', error.message, { cause: error });
+      } else {
+        throw error;
       }
-      throw error;
     }
   }
 
-  protected async sendRequest(
-    request: WebhookReceipt['request'],
-    options: Readonly<PushSendOptions>
-  ): Promise<PushAdapterSendResult<WebhookReceipt>> {
-    return await sendWebhook(this.#fetch, request, options);
+  protected async dispatchRequest(
+    prepared: PushPreparedRequest<WebhookRequestReceipt, WebhookRequestReceipt>,
+    options: PushAdapterOperationOptions
+  ): Promise<PushDispatchResult<never, WebhookResponseReceipt>> {
+    return await sendWebhook(this.#fetch, prepared.transportRequest, options);
   }
 }

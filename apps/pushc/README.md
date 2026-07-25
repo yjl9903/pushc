@@ -44,6 +44,7 @@ level = "active"
 type = "napcat"
 base_url = "ws://127.0.0.1:3001"
 access_token = "${NAPCAT_TOKEN}"
+max_attachment_bytes = 33554432
 
 [adapters.qq.targets.qq-group]
 group_id = "123456789"
@@ -86,6 +87,19 @@ Read a longer message from a UTF-8 file:
 ```bash
 pushc send --target qq:qq-group --file ./report.txt
 ```
+
+Send local or remote attachments:
+
+```bash
+pushc send --target qq:qq-group \
+  --attachment ./screenshot.png \
+  --attachment https://example.com/report.pdf
+```
+
+Attachment sources are interpreted by the selected adapter.
+
+- NapCat probes remote media types, passes URLs through, and encodes local files; dry-run stays local
+- Webhook does not support attachments
 
 Or pipe it through stdin:
 

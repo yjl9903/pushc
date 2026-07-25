@@ -2,7 +2,7 @@ import { PushError } from './error.js';
 import { PushAdapter } from './adapter.js';
 import { validateDestinationName } from './utils/destination.js';
 
-export type AnyPushAdapter = PushAdapter<any, any, any>;
+export type AnyPushAdapter = PushAdapter<any, any, any, any, any>;
 
 export class PushAdapters implements Iterable<[string, AnyPushAdapter]> {
   readonly #items = new Map<string, AnyPushAdapter>();

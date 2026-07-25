@@ -4,6 +4,7 @@ export interface ResolveMessageOptions {
   content?: readonly string[];
   file?: string;
   stdin?: NodeJS.ReadableStream & { isTTY?: boolean };
+  allowEmpty?: boolean;
 }
 
 export type MessageInputErrorCode =
@@ -80,15 +81,20 @@ export async function resolveMessage(options: ResolveMessageOptions = {}): Promi
   } else {
     const stdin = options.stdin ?? process.stdin;
     if (stdin.isTTY) {
-      throw new MessageInputError(
-        'MESSAGE_EMPTY',
-        'Provide message content, --file, or pipe content through stdin.'
-      );
+      if (options.allowEmpty) {
+        message = '';
+      } else {
+        throw new MessageInputError(
+          'MESSAGE_EMPTY',
+          'Provide message content, --file, or pipe content through stdin.'
+        );
+      }
+    } else {
+      message = await readStream(stdin);
     }
-    message = await readStream(stdin);
   }
 
-  if (message.trim().length === 0) {
+  if (!options.allowEmpty && message.trim().length === 0) {
     throw new MessageInputError('MESSAGE_EMPTY', 'Message content must not be empty.');
   }
   return message;

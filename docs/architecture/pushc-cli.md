@@ -22,22 +22,28 @@ app 层读取 TOML、由运行时加载相邻 `.env` 并递归展开 `${ENV_NAME
 
 ```text
 pushc send --target adapter[:target] \
-  [--title <title>] [--param key=value ...] \
+  [--title <title>] [--param key=value] [--attachment <source>] \
   [--dry-run] [--file <path> | ...content]
 ```
 
-`--target` string 原样交给 core client 解析。位置消息、`--file` 与 stdin 的现有优先级和冲突
-规则不变。CLI 构造 `{ message, title?, param? }` payload，并调用
+`--target` string 原样交给 core client 解析。`--attachment <source>` 可重复，每个 source
+都必须完整重复一次 option；本地路径或 HTTP(S) URL 保持原样与顺序写入 payload，由具体
+adapter 解释。位置消息、`--file` 与 stdin 的现有优先级和冲突规则不变。
+存在 attachment 时允许正文来源为空；TTY 且没有正文来源直接使用空 string，空 stdin 或空
+message file 也合法。没有 attachment 时继续拒绝空正文。CLI 构造
+`{ message, attachments?, title?, param? }` payload，并调用
 `client.send(destination, payload)`。
 
 `--dry-run` 调用 `client.send(destination, payload, { dryRun: true })`。它仍完成配置、target、
-payload 和 adapter request 校验，但不执行 `sendRequest` 或平台传输。结果固定包含
-`dryRun: true`；`success` 只表示 request 是否准备成功。正常 send 结果不增加 dryRun 字段。
+payload 和 adapter 本地 preparation，包括本地附件读取与编码以及远程 URL 校验，但不下载
+远程附件、不执行 `dispatchRequest` 或任何目标服务交互。结果固定包含 `dryRun: true`；
+`success` 只表示 request 是否准备成功。正常 send 结果不增加 dryRun 字段。
 
-`--param [...entry]` 可重复出现。每项按第一个 `=` 分隔，key/value 不 trim；value 可以为空
-或包含更多 `=`。key 必须匹配 `[A-Za-z0-9][A-Za-z0-9_.-]*`，同一次发送中按大小写敏感规则
-拒绝重复 key。缺少 `=`、空/非法 key 或重复 key 为 `CLI_USAGE`，exit 2。param 只产生一层
-string Record，不解析 JSON 或创建嵌套结构。
+`--param key=value` 可重复出现，每个 entry 都必须完整重复一次 option。每项按第一个 `=`
+分隔，key/value 不 trim；value 可以为空或包含更多 `=`。key 必须匹配
+`[A-Za-z0-9][A-Za-z0-9_.-]*`，同一次发送中按大小写敏感规则拒绝重复 key。缺少 `=`、空/非法
+key 或重复 key 为 `CLI_USAGE`，exit 2。param 只产生一层 string Record，不解析 JSON 或创建
+嵌套结构。
 
 ## 输出与错误
 

@@ -2,7 +2,15 @@ import { NapCatError } from './error.js';
 import type { NapCatConfig } from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const CONFIG_FIELDS = new Set(['base_url', 'access_token', 'timeout_ms', 'user_id', 'group_id']);
+const DEFAULT_MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
+const CONFIG_FIELDS = new Set([
+  'base_url',
+  'access_token',
+  'timeout_ms',
+  'max_attachment_bytes',
+  'user_id',
+  'group_id'
+]);
 
 export function parseNapCatConfig(input: unknown): NapCatConfig {
   const value = record(input, 'NapCat configuration must be a table.');
@@ -20,10 +28,16 @@ export function parseNapCatConfig(input: unknown): NapCatConfig {
   }
 
   const accessToken = optionalString(value.access_token, 'access_token');
+
   return {
     base_url: parsedUrl.toString(),
     ...(accessToken ? { access_token: accessToken } : {}),
-    timeout_ms: positiveInteger(value.timeout_ms, 'timeout_ms', DEFAULT_TIMEOUT_MS)
+    timeout_ms: positiveInteger(value.timeout_ms, 'timeout_ms', DEFAULT_TIMEOUT_MS),
+    max_attachment_bytes: positiveInteger(
+      value.max_attachment_bytes,
+      'max_attachment_bytes',
+      DEFAULT_MAX_ATTACHMENT_BYTES
+    )
   };
 }
 

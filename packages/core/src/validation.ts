@@ -4,12 +4,13 @@ import { PushError } from './error.js';
 import type { PushPayload, PushSendOptions } from './types.js';
 
 const PARAM_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
-const PAYLOAD_FIELDS = new Set(['message', 'title', 'param']);
+const PAYLOAD_FIELDS = new Set(['message', 'attachments', 'title', 'param']);
 const SEND_OPTION_FIELDS = new Set(['signal', 'dryRun']);
 
 const paramSchema = z.record(z.string().regex(PARAM_KEY_PATTERN), z.string());
 const payloadSchema = z.strictObject({
-  message: z.string().refine((value) => value.trim().length > 0),
+  message: z.string(),
+  attachments: z.array(z.string().refine((value) => value.trim().length > 0)).optional(),
   title: z.string().optional(),
   param: paramSchema.optional()
 });
@@ -30,6 +31,12 @@ export function normalizePayload(input: unknown): PushPayload {
         cause: result.error
       });
     }
+    if (
+      result.data.message.trim().length === 0 &&
+      (result.data.attachments === undefined || result.data.attachments.length === 0)
+    ) {
+      throw new PushError('INVALID_MESSAGE', 'Invalid push payload.');
+    }
 
     const param =
       result.data.param === undefined
@@ -37,9 +44,14 @@ export function normalizePayload(input: unknown): PushPayload {
         : Object.freeze(
             Object.assign(Object.create(null) as Record<string, string>, result.data.param)
           );
+    const attachments =
+      result.data.attachments === undefined || result.data.attachments.length === 0
+        ? undefined
+        : Object.freeze([...result.data.attachments]);
 
     return Object.freeze({
       message: result.data.message,
+      ...(attachments === undefined ? {} : { attachments }),
       ...(result.data.title === undefined ? {} : { title: result.data.title }),
       ...(param === undefined ? {} : { param })
     });

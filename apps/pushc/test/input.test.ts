@@ -40,6 +40,22 @@ describe('resolveMessage', () => {
       code: 'MESSAGE_EMPTY'
     });
   });
+
+  it('allows empty message sources when attachments are present', async () => {
+    await expect(resolveMessage({ stdin: Readable.from([]), allowEmpty: true })).resolves.toBe('');
+    await expect(
+      resolveMessage({
+        stdin: { isTTY: true } as unknown as NodeJS.ReadableStream,
+        allowEmpty: true
+      })
+    ).resolves.toBe('');
+
+    const root = await mkdtemp(join(tmpdir(), 'pushc-empty-input-'));
+    directories.push(root);
+    const file = join(root, 'empty.txt');
+    await writeFile(file, '');
+    await expect(resolveMessage({ file, allowEmpty: true })).resolves.toBe('');
+  });
 });
 
 describe('parseParamEntries', () => {

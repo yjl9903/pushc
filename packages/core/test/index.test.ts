@@ -4,10 +4,10 @@ import {
   PushClient,
   PushError,
   formatDestination,
-  type PushAdapterSendResult,
+  type PushAdapterOperationOptions,
+  type PushDispatchResult,
   type PushPayload,
-  type PushReceipt,
-  type PushSendOptions
+  type PushPreparedRequest
 } from '../src/index.js';
 
 interface TestTarget {
@@ -17,7 +17,7 @@ interface TestTarget {
 interface SentCall {
   readonly target: TestTarget;
   readonly payload: PushPayload;
-  readonly options: Readonly<PushSendOptions>;
+  readonly options: PushAdapterOperationOptions;
 }
 
 interface TestRequest {
@@ -25,9 +25,12 @@ interface TestRequest {
   readonly message: string;
 }
 
-type TestReceipt = PushReceipt<TestRequest, { id: string }>;
-
-class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestReceipt> {
+class MemoryAdapter extends PushAdapter<
+  { prefix: string },
+  TestTarget,
+  TestRequest,
+  { id: string }
+> {
   readonly contexts: SentCall[] = [];
   readonly prepared = new WeakMap<TestRequest, Omit<SentCall, 'options'>>();
   readonly parse = vi.fn((input: unknown): TestTarget => {
@@ -40,8 +43,8 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestRece
   });
   readonly sendImplementation?: (
     request: TestRequest,
-    options: Readonly<PushSendOptions>
-  ) => Promise<PushAdapterSendResult<TestReceipt>>;
+    options: PushAdapterOperationOptions
+  ) => Promise<PushDispatchResult<TestRequest, { id: string }>>;
   readonly destroyImplementation?: () => Promise<void>;
 
   constructor(
@@ -50,8 +53,8 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestRece
     options: {
       send?: (
         request: TestRequest,
-        options: Readonly<PushSendOptions>
-      ) => Promise<PushAdapterSendResult<TestReceipt>>;
+        options: PushAdapterOperationOptions
+      ) => Promise<PushDispatchResult<TestRequest, { id: string }>>;
       destroy?: () => Promise<void>;
     } = {}
   ) {
@@ -64,26 +67,27 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestRece
     return this.parse(input);
   }
 
-  protected prepareRequest(target: TestTarget, payload: PushPayload): TestRequest {
+  protected async prepareRequest(
+    target: TestTarget,
+    payload: PushPayload
+  ): Promise<PushPreparedRequest<TestRequest, TestRequest>> {
     const request = { channel: target.channel, message: payload.message };
     this.prepared.set(request, { target, payload });
-    return request;
+    return { receiptRequest: request, transportRequest: request };
   }
 
-  protected async sendRequest(
-    request: TestRequest,
-    options: Readonly<PushSendOptions>
-  ): Promise<PushAdapterSendResult<TestReceipt>> {
-    const prepared = this.prepared.get(request);
+  protected async dispatchRequest(
+    preparedRequest: PushPreparedRequest<TestRequest, TestRequest>,
+    options: PushAdapterOperationOptions
+  ): Promise<PushDispatchResult<TestRequest, { id: string }>> {
+    const transportRequest = preparedRequest.transportRequest;
+    const prepared = this.prepared.get(transportRequest);
     if (!prepared) throw new Error('request was not prepared');
     this.contexts.push({ ...prepared, options });
     return (
-      (await this.sendImplementation?.(request, options)) ?? {
+      (await this.sendImplementation?.(transportRequest, options)) ?? {
         success: true,
-        receipt: {
-          request,
-          response: { id: `${request.channel}:${request.message}` }
-        }
+        response: { id: `${transportRequest.channel}:${transportRequest.message}` }
       }
     );
   }
@@ -277,6 +281,7 @@ describe('send boundaries', () => {
   it('copies payload safely and preserves signal identity', async () => {
     const adapter = new MemoryAdapter();
     const param = { constructor: 'safe', key: 'value' };
+    const attachments = ['photo.png', 'report.pdf'];
     const signal = {
       aborted: false,
       addEventListener: vi.fn(),
@@ -285,12 +290,15 @@ describe('send boundaries', () => {
 
     await adapter.send(
       undefined,
-      { message: ' hello ', title: '', param },
+      { message: ' hello ', attachments, title: '', param },
       { signal, dryRun: false }
     );
+    attachments.push('later.txt');
 
     const context = adapter.contexts[0]!;
     expect(context.payload.message).toBe(' hello ');
+    expect(context.payload.attachments).toEqual(['photo.png', 'report.pdf']);
+    expect(Object.isFrozen(context.payload.attachments)).toBe(true);
     expect(context.payload.title).toBe('');
     expect(context.payload.param).toMatchInlineSnapshot(`
       {
@@ -301,13 +309,16 @@ describe('send boundaries', () => {
     expect(Object.getPrototypeOf(context.payload.param)).toBeNull();
     expect(Object.isFrozen(context.payload.param)).toBe(true);
     expect(context.options.signal).toBe(signal);
-    expect(context.options.dryRun).toBe(false);
+    expect(context.options).not.toHaveProperty('dryRun');
     expect(Object.isFrozen(context.options)).toBe(true);
   });
 
   it.each([
     [{ message: '' }],
     [{ message: '   ' }],
+    [{ message: '', attachments: [] }],
+    [{ message: '', attachments: [''] }],
+    [{ message: '', attachments: [1] }],
     [{ message: 1 }],
     [{ message: 'ok', title: null }],
     [{ message: 'ok', param: [] }],
@@ -321,6 +332,21 @@ describe('send boundaries', () => {
       success: false,
       error: { code: 'INVALID_MESSAGE' }
     });
+  });
+
+  it('accepts attachment-only payloads and normalizes empty attachment arrays away', async () => {
+    const adapter = new MemoryAdapter();
+
+    await expect(
+      adapter.send(undefined, { message: '', attachments: ['photo.png'] })
+    ).resolves.toMatchObject({
+      success: true,
+      receipt: { request: { channel: '#default', message: '' } }
+    });
+    expect(adapter.contexts[0]?.payload.attachments).toEqual(['photo.png']);
+
+    await adapter.send(undefined, { message: 'hello', attachments: [] });
+    expect(adapter.contexts[1]?.payload).not.toHaveProperty('attachments');
   });
 
   it('rejects invalid options and pre-cancelled signals before target parsing', async () => {
@@ -355,6 +381,51 @@ describe('send boundaries', () => {
       error: { code: 'SEND_FAILED', message: 'Message sending was aborted.' }
     });
     expect(adapter.parse).not.toHaveBeenCalled();
+  });
+
+  it('preserves prepared requests when cancellation prevents dispatch', async () => {
+    const adapter = new MemoryAdapter();
+    const sendController = new AbortController();
+    const sending = adapter.send(undefined, { message: 'send' }, { signal: sendController.signal });
+    sendController.abort(new Error('cancelled after preparation'));
+
+    await expect(sending).resolves.toEqual({
+      success: false,
+      receipt: {
+        request: {
+          channel: '#default',
+          message: 'send'
+        }
+      },
+      error: {
+        code: 'SEND_FAILED',
+        message: 'Message sending was aborted.'
+      }
+    });
+
+    const dryRunController = new AbortController();
+    const preparing = adapter.send(
+      undefined,
+      { message: 'dry-run' },
+      { dryRun: true, signal: dryRunController.signal }
+    );
+    dryRunController.abort(new Error('cancelled after preparation'));
+
+    await expect(preparing).resolves.toEqual({
+      dryRun: true,
+      success: false,
+      receipt: {
+        request: {
+          channel: '#default',
+          message: 'dry-run'
+        }
+      },
+      error: {
+        code: 'SEND_FAILED',
+        message: 'Message sending was aborted.'
+      }
+    });
+    expect(adapter.contexts).toEqual([]);
   });
 
   it.each([
@@ -425,7 +496,6 @@ describe('send boundaries', () => {
       {
         send: async () => ({
           success: false,
-          receipt: { request },
           error: { code: 'SEND_FAILED', message: 'offline' }
         })
       }
@@ -441,15 +511,43 @@ describe('send boundaries', () => {
     });
 
     const unexpected = new MemoryAdapter();
-    vi.spyOn(unexpected, 'send').mockRejectedValue(new Error('unexpected failure'));
     await expect(
-      createClient(unexpected).send('memory:ops', { message: 'hello' })
+      createClient(
+        new MemoryAdapter('#', {}, { send: async () => Promise.reject(new Error('unexpected')) })
+      ).send('memory:ops', { message: 'hello' })
     ).resolves.toEqual({
       success: false,
       adapter: 'memory',
       target: 'ops',
-      error: { code: 'SEND_FAILED', message: 'unexpected failure' }
+      receipt: { request: { channel: '#ops', message: 'hello' } },
+      error: { code: 'SEND_FAILED', message: 'unexpected' }
     });
+  });
+
+  it('uses a receipt request finalized during dispatch', async () => {
+    const adapter = new MemoryAdapter(
+      '#',
+      {},
+      {
+        send: async (request) => ({
+          success: true,
+          request: { ...request, message: 'finalized' },
+          response: { id: 'sent' }
+        })
+      }
+    );
+
+    await expect(createClient(adapter).send('memory:ops', { message: 'initial' })).resolves.toEqual(
+      {
+        success: true,
+        adapter: 'memory',
+        target: 'ops',
+        receipt: {
+          request: { channel: '#ops', message: 'finalized' },
+          response: { id: 'sent' }
+        }
+      }
+    );
   });
 
   it('only forwards fields defined by the public result contract', async () => {
