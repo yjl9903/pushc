@@ -6,6 +6,7 @@
 - [Global options](#global-options)
 - [targets](#targets)
 - [send](#send)
+- [Adapter-specific behavior](#adapter-specific-behavior)
 - [Configuration loading](#configuration-loading)
 - [Output and exit status](#output-and-exit-status)
 - [Operational behavior](#operational-behavior)
@@ -55,8 +56,8 @@ produces its default destination, even though no named target is registered.
 Text output:
 
 ```text
-deploy:release
-qq:ops-group
+alerts:release
+status
 ```
 
 With no adapters, text output is `No targets configured.`
@@ -66,14 +67,11 @@ JSON output:
 ```json
 {
   "success": true,
-  "targets": [
-    { "adapter": "deploy", "target": "release" },
-    { "adapter": "qq", "target": "ops-group" }
-  ]
+  "targets": [{ "adapter": "alerts", "target": "release" }, { "adapter": "status" }]
 }
 ```
 
-Default targets omit the `target` property: `{"adapter":"deploy"}`. Output never includes adapter
+Default targets omit the `target` property: `{"adapter":"status"}`. Output never includes adapter
 options, target options, URLs, or tokens.
 
 ## `send`
@@ -85,9 +83,9 @@ pushc send --target <adapter[:target]> [--title <title>] [--param key=value] [--
 ```
 
 `--target` is required. Adapter and target names must start with a letter or digit and contain only
-letters, digits, `_`, or `-`. At most one colon is allowed. `qq:ops` selects named target `ops` on
-adapter `qq`; `qq` selects the adapter's default target. Omitting a target does not fall back to the
-only named target.
+letters, digits, `_`, or `-`. At most one colon is allowed. `alerts:release` selects named target
+`release` on adapter `alerts`; `alerts` selects the adapter's default target. Omitting a target does
+not fall back to the only named target.
 
 `--title` supplies the optional public title field.
 
@@ -103,24 +101,20 @@ the value, and key/value are not trimmed. Keys match `[A-Za-z0-9][A-Za-z0-9_.-]*
 case-sensitive. Missing `=`, invalid/empty keys, and duplicate keys fail with `CLI_USAGE`. Title and
 params are not credential channels.
 
-`-a, --attachment <source>` may be repeated and preserves source order and duplicates. NapCat
-accepts local paths and HTTP(S) URLs; relative paths resolve from the current working directory.
+`-a, --attachment <source>` may be repeated and preserves source strings, order, and duplicates.
 Repeat the complete option for every source:
 
 ```bash
---attachment ./first.png --attachment https://example.com/second.pdf
+--attachment <first-source> --attachment <second-source>
 ```
 
-Local files are read, size-limited, Base64-encoded for transport, and represented in receipts only
-by filename, MIME type, size, and SHA-256. Remote URLs are passed to NapCat and represented without
-their path, query, or credentials. A real send probes remote MIME types with bounded concurrent HEAD
-requests before connecting. Attachment segments precede the optional text segment. Webhook
-destinations reject any non-empty attachment list.
+The selected adapter decides whether attachments are supported, which source formats are valid, how
+they are prepared, and whether an empty message may accompany them. Read its reference before using
+this option.
 
 `--dry-run` performs the same configuration, destination, target, payload, and local preparation as
-a real send, then returns the prepared send without performing it. With NapCat attachments it reads,
-encodes, and hashes local files, but does not probe remote URLs, connect, upload, or contact the
-destination. A successful dry-run means the send is ready, not completed.
+a real send, then returns the prepared send without dispatching it. Preparation details are
+adapter-specific. A successful dry-run means the send is ready, not completed.
 
 Message source precedence and validation:
 
@@ -136,28 +130,21 @@ before sending.
 Text success examples:
 
 ```text
-Send succeeded: deploy:release
-Summary: Webhook POST to hooks.example.com completed with HTTP 204.
-Send succeeded: qq:ops-group
-Summary: NapCat sent a message to group 123456 (message ID: 12345).
+Send succeeded: alerts:release
+Summary: Notification accepted.
 ```
 
-Text details come from the unified receipt summary. JSON preserves the complete redacted receipt:
+Text details come from the unified receipt summary. JSON preserves the complete redacted receipt;
+receipt fields other than `summary` depend on the adapter:
 
 ```json
 {
   "success": true,
-  "adapter": "deploy",
+  "adapter": "alerts",
   "target": "release",
   "receipt": {
-    "summary": "Webhook POST to hooks.example.com completed with HTTP 204.",
-    "request": {
-      "url": "[REDACTED]",
-      "method": "POST",
-      "headers": {},
-      "timeout_ms": 10000
-    },
-    "response": { "status": 204, "headers": {} }
+    "request": {},
+    "summary": "Notification accepted."
   }
 }
 ```
@@ -165,34 +152,34 @@ Text details come from the unified receipt summary. JSON preserves the complete 
 Dry-run text output includes the prepared request:
 
 ```text
-Dry run ready: deploy:release
+Dry run ready: alerts:release
 Request:
-{
-  "url": "[REDACTED]",
-  "method": "POST",
-  "headers": {},
-  "timeout_ms": 10000
-}
+{}
 ```
 
-Dry-run JSON sets `dryRun: true`; its receipt contains `request` but no platform `response`:
+Dry-run JSON sets `dryRun: true`; its receipt contains the adapter's prepared `request` but no
+platform `response`:
 
 ```json
 {
   "dryRun": true,
   "success": true,
-  "adapter": "deploy",
+  "adapter": "alerts",
   "target": "release",
   "receipt": {
-    "request": {
-      "url": "[REDACTED]",
-      "method": "POST",
-      "headers": {},
-      "timeout_ms": 10000
-    }
+    "request": {}
   }
 }
 ```
+
+## Adapter-specific behavior
+
+The CLI forwards the target, payload, attachments, and dry-run request through the common adapter
+contract. Configuration fields, payload interpretation, attachment support, preparation, transport,
+receipts, and platform errors are defined by the selected adapter:
+
+- [Webhook adapter](webhook.md)
+- [NapCat adapter](napcat.md)
 
 ## Configuration loading
 
@@ -202,9 +189,10 @@ file or directory; automatically discovered candidates must be regular files.
 
 Pushc loads `.env` beside the selected config with existing process variables taking precedence,
 then expands `${NAME}` in all TOML string values. Missing variables fail validation. The root table
-accepts only `adapters`. Supported adapter types are `webhook` and `napcat`.
+accepts only `adapters`.
 
-See [configuration.md](configuration.md) for schemas and examples.
+See [configuration.md](configuration.md) for common loading and security rules and the adapter
+references above for schemas and examples.
 
 ## Output and exit status
 
@@ -223,28 +211,25 @@ Contextual errors with `--json` use:
 Send failures retain every available destination and receipt field:
 
 ```text
-Send failed: deploy:release
-Error: Webhook returned HTTP 503.
+Send failed: alerts:release
+Error: Destination rejected the notification.
 ```
 
 ```json
 {
   "success": false,
-  "adapter": "deploy",
+  "adapter": "alerts",
   "target": "release",
-  "receipt": {
-    "request": {},
-    "response": { "status": 503, "headers": {} }
-  },
-  "error": { "code": "SEND_FAILED", "message": "Webhook returned HTTP 503." }
+  "receipt": { "request": {} },
+  "error": { "code": "SEND_FAILED", "message": "Destination rejected the notification." }
 }
 ```
 
 Dry-run failures use the same error codes and preserve a prepared request when one is available:
 
 ```text
-Dry run failed: deploy:release
-Error: Invalid webhook configuration.
+Dry run failed: alerts:release
+Error: Invalid adapter configuration.
 ```
 
 Exit statuses:

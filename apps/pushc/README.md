@@ -13,6 +13,14 @@ Now pushc supports adapters:
 
 ## Install
 
+Copy this to your agent:
+
+```text
+Install pushc skill from https://github.com/yjl9903/pushc
+```
+
+Or install pushc CLI manually.
+
 ```bash
 npm install -g pushc
 ```
@@ -96,10 +104,7 @@ pushc send --target qq:qq-group \
   --attachment https://example.com/report.pdf
 ```
 
-Attachment sources are interpreted by the selected adapter.
-
-- NapCat probes remote media types, passes URLs through, and encodes local files; dry-run stays local
-- Webhook does not support attachments
+Attachment support and source interpretation depend on the selected adapter.
 
 Or pipe it through stdin:
 

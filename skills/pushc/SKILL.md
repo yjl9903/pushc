@@ -28,7 +28,7 @@ other operations, configure only when necessary, and never expose credentials in
    test notification unless the user asks for one.
 
 `config.toml` is non-sensitive and may be read and edited. It must contain only placeholders for
-tokens, keys, passwords, credentials, and private webhook URLs. Never read, print, or modify an
+tokens, keys, passwords, credentials, and private endpoint URLs. Never read, print, or modify an
 adjacent `.env`; pushc itself may load it at runtime. Prefer environment interpolation for every
 credential.
 
@@ -76,14 +76,15 @@ pushc send --target alerts:release \
   "Production deployment succeeded"
 ```
 
-When the selected destination supports attachments, send local files or HTTP(S) sources with or
-without a message. Repeat the complete `--attachment <source>` option for every source.
+When the selected destination supports attachments, repeat the complete `--attachment <source>`
+option for every source. Read the selected adapter's reference before choosing source formats or
+relying on attachment-only sends:
 
 ```bash
-pushc send --target alerts:release --attachment ./screenshot.png "Build completed"
 pushc send --target alerts:release \
-  --attachment ./report.pdf \
-  --attachment https://example.com/release-notes.txt
+  --attachment <first-source> \
+  --attachment <second-source> \
+  "Build completed"
 ```
 
 Attachment support and source interpretation depend on the selected destination, so do not assume
@@ -108,8 +109,16 @@ git log -1 | pushc send --target alerts:release
 
 Do not combine positional content with `--file`.
 
+## References
+
 Read [reference/cli.md](reference/cli.md) when exact command behavior, output schemas, config
 resolution, input rules, exit status, or troubleshooting details matter.
+
+Read the reference matching the selected adapter before configuring it or relying on
+adapter-specific send behavior:
+
+- [Webhook adapter](reference/webhook.md)
+- [NapCat adapter](reference/napcat.md)
 
 ## Operating rules
 
