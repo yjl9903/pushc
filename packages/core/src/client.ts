@@ -2,7 +2,6 @@ import type { PushDestination, PushPayload, PushResult, PushSendOptions } from '
 
 import { PushError } from './error.js';
 import { PushAdapters } from './adapters.js';
-import { errorMessage } from './utils/error.js';
 import { normalizeDestination } from './utils/destination.js';
 
 export class PushClient {
@@ -19,36 +18,53 @@ export class PushClient {
     payload: PushPayload,
     options?: PushSendOptions
   ): Promise<PushResult> {
-    if (this.#destroyed) {
-      throw new PushError('CLIENT_DESTROYED', 'PushClient has been destroyed.');
-    }
-
-    const normalizedDestination = normalizeDestination(destination);
-    const selectedAdapter = this.adapters.get(normalizedDestination.adapter);
-    if (!selectedAdapter) {
-      throw new PushError(
-        'ADAPTER_NOT_FOUND',
-        `Adapter "${normalizedDestination.adapter}" is not defined.`
-      );
-    }
+    let adapter: string | undefined;
+    let target: string | undefined;
     try {
-      const receipt = await selectedAdapter.send(normalizedDestination.target, payload, options);
-      return {
-        adapter: normalizedDestination.adapter,
-        ...(typeof normalizedDestination.target === 'string'
-          ? { target: normalizedDestination.target }
-          : {}),
-        receipt
-      };
-    } catch (error) {
-      if (error instanceof PushError) {
-        throw error;
+      if (this.#destroyed) {
+        throw new PushError('CLIENT_DESTROYED', 'PushClient has been destroyed.');
       }
-      throw new PushError(
-        'SEND_FAILED',
-        `Adapter "${normalizedDestination.adapter}" failed to deliver the message: ${errorMessage(error)}`,
-        { cause: error }
-      );
+
+      const normalizedDestination = normalizeDestination(destination);
+      adapter = normalizedDestination.adapter;
+      target =
+        typeof normalizedDestination.target === 'string' ? normalizedDestination.target : undefined;
+      const selectedAdapter = this.adapters.get(adapter);
+      if (!selectedAdapter) {
+        throw new PushError('ADAPTER_NOT_FOUND', `Adapter "${adapter}" is not defined.`);
+      }
+
+      const result = await selectedAdapter.send(normalizedDestination.target, payload, options);
+      if (result.success) {
+        return {
+          success: true,
+          adapter,
+          ...(target === undefined ? {} : { target }),
+          receipt: result.receipt
+        };
+      } else {
+        return {
+          success: false,
+          adapter,
+          ...(target === undefined ? {} : { target }),
+          ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+          error: {
+            code: result.error.code,
+            message: result.error.message
+          }
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        ...(adapter === undefined ? {} : { adapter }),
+        ...(target === undefined ? {} : { target }),
+        error: {
+          code:
+            error instanceof PushError ? error.code : adapter ? 'SEND_FAILED' : 'INTERNAL_ERROR',
+          message: error instanceof Error && error.message ? error.message : 'Unknown error'
+        }
+      };
     }
   }
 

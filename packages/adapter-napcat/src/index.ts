@@ -1,5 +1,5 @@
-export * from './adapter.js';
-export * from './config.js';
-export * from './error.js';
-export { parseNapCatTarget } from './target.js';
 export * from './types.js';
+export * from './error.js';
+export * from './config.js';
+export * from './adapter.js';
+export { parseNapCatTarget } from './target.js';

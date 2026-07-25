@@ -1,6 +1,6 @@
 export * from '@pushc/core';
 
-export * from './client.js';
+export { makePushRuntime, type PushRuntime } from './client.js';
 
 export type { FindConfigPathOptions, PushAdapterConfigDefinition, PushConfig } from './config.js';
 

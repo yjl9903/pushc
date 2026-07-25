@@ -22,9 +22,7 @@ interface PushSendOptions {
 }
 
 type PushTargetInput = string | Readonly<Record<string, unknown>>;
-type PushDestination =
-  | string
-  | { readonly adapter: string; readonly target?: PushTargetInput };
+type PushDestination = string | { readonly adapter: string; readonly target?: PushTargetInput };
 ```
 
 adapter 使用 `send(target, payload, options?)`；client 使用
@@ -52,7 +50,7 @@ protected abstract sendTarget(
   target: TTarget,
   payload: PushPayload,
   options: Readonly<PushSendOptions>
-): Promise<TReceipt>;
+): Promise<PushAdapterSendResult<TReceipt>>;
 ```
 
 三个参数分别是 resolved `target`、normalized `payload` 和 normalized `options`，与公共
@@ -71,15 +69,22 @@ hook，失败归一化为 `DESTROY_FAILED`。
 
 `PushClient.send()` 先校验 destination，再选择 adapter。不存在的 adapter 返回
 `ADAPTER_NOT_FOUND`；destination 非法返回 `INVALID_TARGET`。发送结果为
-`{ adapter, target?, receipt }`，只有具名 string target 出现在 result 中。
+顶层 `PushResult` 是 success/error 判别联合。成功包含
+`{ success: true, adapter, target?, receipt }`；失败包含
+`{ success: false, adapter?, target?, receipt?, error }`。Receipt 只保存 adapter-specific
+`{ request, response?, summary? }`，且必须可序列化。adapter outcome 先组合 receipt/error，
+client 按 success/failure 分支显式构造结果，只复制协议规定的字段，再合并逐步解析出的
+adapter 和具名 string target；outcome 的其他顶层字段不进入 PushResult。所有预期发送错误均
+返回失败 result。
 adapter name 和 target name 统称 destination name，使用同一套格式规则；
 `formatDestination(adapter, target?)` 由 core 统一把 destination 格式化为
 `adapter[:target]`。destination 的名称校验、输入归一化和格式化聚合在
 `utils/destination.ts`；名称正则是内部实现，不属于公共 API。
 
-adapter 主动抛出的 `PushError` 原样透传。其他发送异常包装为 `SEND_FAILED`，保留原异常为
-cause。destination name 匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`。`PushClient.destroy()` 幂等
-销毁全部 adapter，并禁止后续发送。
+adapter 和 client 将 `PushError` 的 code/message 写入失败结果；意外 adapter 异常归一化
+为 `SEND_FAILED`，无法进入 adapter 阶段的意外异常为 `INTERNAL_ERROR`，cause 不进入结果。
+destination name 匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`。`PushClient.destroy()` 幂等销毁全部
+adapter，并禁止后续发送。
 
 ## 测试边界
 

@@ -1,15 +1,31 @@
-import type { PushPayload, PushSendOptions } from '@pushc/core';
+import type { PushAdapterSendResult, PushPayload, PushSendOptions } from '@pushc/core';
 
 import { invalidConfig, parseContentType } from './config.js';
 import { WebhookError } from './error.js';
 import { renderWebhookBody, renderWebhookTemplate } from './target.js';
-import type { WebhookReceipt, WebhookRequest, WebhookRequestConfig } from './types.js';
+import type {
+  JsonValue,
+  WebhookReceipt,
+  WebhookRequestConfig,
+  WebhookRequestReceipt,
+  WebhookResponseReceipt
+} from './types.js';
+import { isJsonValue } from './utils/json.js';
+
+const FILTERED_RESPONSE_HEADERS = new Set([
+  'set-cookie',
+  'set-cookie2',
+  'www-authenticate',
+  'proxy-authenticate',
+  'authentication-info',
+  'proxy-authentication-info'
+]);
 
 export function buildWebhookRequest(
   target: WebhookRequestConfig,
   origin: string,
   payload: PushPayload
-): WebhookRequest {
+): WebhookRequestReceipt {
   try {
     const url = parseFinalUrl(renderWebhookTemplate(target.url, payload), origin);
     const headerMap = new Map<string, string>();
@@ -17,10 +33,8 @@ export function buildWebhookRequest(
       headerMap.set(name, renderWebhookTemplate(value, payload));
     }
 
-    const renderedBody =
-      target.body === undefined ? undefined : renderWebhookBody(target.body, payload);
-    let body: string | undefined;
-    if (renderedBody !== undefined) {
+    const body = target.body === undefined ? undefined : renderWebhookBody(target.body, payload);
+    if (body !== undefined) {
       const configured = parseContentType(target.content_type ?? 'application/json');
       const explicitHeader = headerMap.get('content-type');
       if (explicitHeader === undefined) {
@@ -29,17 +43,16 @@ export function buildWebhookRequest(
         throw invalidConfig();
       }
       if (configured.essence === 'text/plain') {
-        if (typeof renderedBody !== 'string') throw invalidConfig();
-        body = renderedBody;
+        if (typeof body !== 'string') throw invalidConfig();
       } else {
         try {
-          body = JSON.stringify(renderedBody);
+          JSON.stringify(body);
         } catch (cause) {
           throw invalidConfig(cause);
         }
       }
     }
-    if ((target.method === 'GET' || target.method === 'HEAD') && renderedBody !== undefined) {
+    if ((target.method === 'GET' || target.method === 'HEAD') && body !== undefined) {
       throw invalidConfig();
     }
 
@@ -52,7 +65,8 @@ export function buildWebhookRequest(
     return {
       url,
       method: target.method,
-      headers,
+      headers: Object.freeze(Object.fromEntries(headers)),
+      ...(target.content_type === undefined ? {} : { content_type: target.content_type }),
       timeout_ms: target.timeout_ms,
       ...(body === undefined ? {} : { body })
     };
@@ -64,44 +78,95 @@ export function buildWebhookRequest(
 
 export async function sendWebhook(
   fetch: typeof globalThis.fetch,
-  request: WebhookRequest,
+  request: WebhookRequestReceipt,
   options: Readonly<PushSendOptions>
-): Promise<WebhookReceipt> {
+): Promise<PushAdapterSendResult<WebhookReceipt>> {
   if (typeof fetch !== 'function') {
-    throw new WebhookError('FETCH_UNAVAILABLE', 'This runtime does not provide fetch.');
+    return failure(request, 'This runtime does not provide fetch.');
   }
 
   const requestAbort = requestSignal(options.signal, request.timeout_ms);
   try {
+    const contentType =
+      request.content_type === undefined ? undefined : parseContentType(request.content_type);
+    const body =
+      request.body === undefined
+        ? undefined
+        : contentType?.essence === 'text/plain'
+          ? (request.body as string)
+          : JSON.stringify(request.body);
     const response = await fetch(request.url, {
       method: request.method,
       headers: request.headers,
-      ...(request.body === undefined ? {} : { body: request.body }),
+      ...(body === undefined ? {} : { body }),
       signal: requestAbort.signal
     });
+    const responseReceipt = await readResponse(response);
     if (!response.ok) {
-      throw new WebhookError(
-        'HTTP_ERROR',
-        `Webhook returned HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}.`,
-        { status: response.status }
-      );
+      return failure(request, `Webhook returned HTTP ${response.status}.`, responseReceipt);
     }
-    return { status: response.status };
+    return {
+      success: true,
+      receipt: {
+        summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
+        request,
+        response: responseReceipt
+      }
+    };
   } catch (error) {
-    if (error instanceof WebhookError) throw error;
     if (requestAbort.signal.aborted) {
-      throw new WebhookError(
-        'ABORTED',
+      return failure(
+        request,
         requestAbort.signal.reason === timeoutReason
           ? `Webhook request timed out after ${request.timeout_ms}ms.`
-          : 'Webhook request was aborted.',
-        { cause: error }
+          : 'Webhook request was aborted.'
       );
     }
-    throw error;
+    return failure(
+      request,
+      error instanceof WebhookError ? error.message : 'Webhook request failed.'
+    );
   } finally {
     requestAbort.cleanup();
   }
+}
+
+function failure(
+  request: WebhookRequestReceipt,
+  message: string,
+  response?: WebhookResponseReceipt
+): PushAdapterSendResult<WebhookReceipt> {
+  return {
+    success: false,
+    receipt: {
+      request,
+      ...(response === undefined ? {} : { response })
+    },
+    error: { code: 'SEND_FAILED', message }
+  };
+}
+
+async function readResponse(response: Response): Promise<WebhookResponseReceipt> {
+  const headers = Object.freeze(
+    Object.fromEntries(
+      [...response.headers].filter(([name]) => !FILTERED_RESPONSE_HEADERS.has(name.toLowerCase()))
+    )
+  );
+  let body: JsonValue | undefined;
+  try {
+    const text = await response.text();
+    if (text !== '') {
+      const parsed: unknown = JSON.parse(text);
+      if (isJsonValue(parsed)) body = parsed;
+    }
+  } catch {
+    // Response parsing is best effort and does not change delivery success.
+  }
+  return {
+    status: response.status,
+    headers,
+    ...(body === undefined ? {} : { body })
+  };
 }
 
 function parseFinalUrl(input: string, origin: string): string {

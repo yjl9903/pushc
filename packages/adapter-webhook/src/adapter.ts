@@ -1,4 +1,10 @@
-import { PushAdapter, PushError, type PushPayload, type PushSendOptions } from '@pushc/core';
+import {
+  PushAdapter,
+  PushError,
+  type PushAdapterSendResult,
+  type PushPayload,
+  type PushSendOptions
+} from '@pushc/core';
 
 import type {
   CreateWebhookAdapterOptions,
@@ -41,11 +47,7 @@ export class WebhookAdapter extends PushAdapter<
     target: WebhookTargetConfig,
     payload: PushPayload,
     options: Readonly<PushSendOptions>
-  ): Promise<WebhookReceipt> {
-    if (typeof this.#fetch !== 'function') {
-      throw new WebhookError('FETCH_UNAVAILABLE', 'This runtime does not provide fetch.');
-    }
-
+  ): Promise<PushAdapterSendResult<WebhookReceipt>> {
     let request;
     try {
       request = buildWebhookRequest(target.request, this.#origin, payload);

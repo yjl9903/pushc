@@ -1,3 +1,5 @@
+import type { PushReceipt } from '@pushc/core';
+
 export type JsonValue =
   null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
@@ -23,17 +25,22 @@ export interface WebhookTargetConfig {
   readonly response: WebhookResponseConfig;
 }
 
-export interface WebhookRequest {
+export interface WebhookRequestReceipt {
   readonly url: string;
   readonly method: string;
-  readonly headers: Headers;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly content_type?: string;
   readonly timeout_ms: number;
-  readonly body?: string;
+  readonly body?: JsonValue;
 }
 
-export interface WebhookReceipt {
+export interface WebhookResponseReceipt {
   readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body?: JsonValue;
 }
+
+export type WebhookReceipt = PushReceipt<WebhookRequestReceipt, WebhookResponseReceipt>;
 
 export interface CreateWebhookAdapterOptions {
   readonly fetch?: typeof globalThis.fetch;

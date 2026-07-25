@@ -12,14 +12,20 @@ export type CliContext = ReturnType<Breadc['parse']>['context'];
 
 export class CliError extends Error {
   readonly ctx: CliContext;
+  readonly redactions: readonly string[];
   override readonly cause: unknown;
 
-  constructor(cause: unknown, ctx: CliContext) {
+  constructor(cause: unknown, ctx: CliContext, redactions: readonly string[] = []) {
     super(normalizeError(cause).message);
     this.name = 'CliError';
     this.ctx = ctx;
+    this.redactions = redactions;
     this.cause = cause;
   }
+}
+
+export function cliErrorRedactions(error: unknown): readonly string[] {
+  return error instanceof CliError ? error.redactions : [];
 }
 
 export function unwrapCliError(error: unknown): unknown {
@@ -53,16 +59,9 @@ export function errorMessage(error: unknown): string {
 }
 
 export function getErrorExitCode(error: unknown): number {
-  if (
-    error instanceof ConfigError ||
-    error instanceof MessageInputError ||
-    error instanceof CliUsageError ||
-    error instanceof BreadcError
-  ) {
-    return 2;
-  }
-  if (error instanceof PushError && error.code !== 'SEND_FAILED') {
-    return 2;
-  }
-  return 1;
+  return getErrorCodeExitCode(normalizeError(error).code);
+}
+
+export function getErrorCodeExitCode(code: string): number {
+  return code === 'SEND_FAILED' || code === 'DESTROY_FAILED' || code === 'INTERNAL_ERROR' ? 1 : 2;
 }

@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NapCatAdapter } from '@pushc/adapter-napcat';
 import { WebhookAdapter } from '@pushc/adapter-webhook';
+import type { PushClient } from '@pushc/core';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makePushClient } from '../src/client.js';
+import { makePushRuntime } from '../src/client.js';
 
 const directories: string[] = [];
 const envName = 'PUSHC_TEST_WEBHOOK_URL_019F7833';
@@ -27,7 +28,14 @@ async function tempDirectory(): Promise<string> {
   return path;
 }
 
-describe('makePushClient', () => {
+async function makeTestClient(config: string): Promise<PushClient> {
+  const runtime = await makePushRuntime({ config });
+  expect(runtime.success).toBe(true);
+  if (!runtime.success) throw runtime.error;
+  return runtime.client;
+}
+
+describe('makePushRuntime', () => {
   it('constructs adapters with generated default or adapter-owned named targets', async () => {
     const root = await tempDirectory();
     delete process.env[envName];
@@ -48,7 +56,7 @@ describe('makePushClient', () => {
       ].join('\n')
     );
 
-    const client = await makePushClient(join(root, 'config.toml'));
+    const client = await makeTestClient(join(root, 'config.toml'));
     const webhook = client.adapters.get('webhook');
     const qq = client.adapters.get('qq');
 
@@ -104,7 +112,7 @@ describe('makePushClient', () => {
       '[adapters.webhook]\ntype = "webhook"\nurl = "https://example.com"\n'
     );
 
-    const client = await makePushClient(join(root, 'nested', 'custom.toml'));
+    const client = await makeTestClient(join(root, 'nested', 'custom.toml'));
 
     expect(client.adapters.get('webhook')?.targets.size).toBe(0);
     expect(client.adapters.get('webhook')?.targets.resolve()).toMatchInlineSnapshot(`
@@ -128,7 +136,7 @@ describe('makePushClient', () => {
       '[adapters.webhook]\ntype = "webhook"\nurl = "https://example.com"\n[adapters.webhook.request.headers]\nX-Base = "yes"\n[adapters.webhook.targets.ops.request]\nurl = "https://example.com/ops"\nmethod = "PUT"\nheaders = { X-Target = "yes" }\nbody = { message = "{{message}}" }\n'
     );
 
-    const client = await makePushClient(config);
+    const client = await makeTestClient(config);
     expect(client.adapters.get('webhook')?.targets.get('ops')).toMatchInlineSnapshot(`
       {
         "request": {
@@ -154,18 +162,27 @@ describe('makePushClient', () => {
     const root = await tempDirectory();
     const config = join(root, 'config.toml');
     await writeFile(config, '[adapters.custom]\ntype = "custom"\n');
-    await expect(makePushClient(config)).rejects.toMatchObject({ code: 'UNKNOWN_ADAPTER' });
+    await expect(makePushRuntime({ config })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'UNKNOWN_ADAPTER' }
+    });
 
     await writeFile(config, '[adapters.webhook]\ntype = "webhook"\n');
-    await expect(makePushClient(config)).rejects.toMatchObject({
-      code: 'INVALID_CONFIG',
-      cause: expect.any(Error)
+    await expect(makePushRuntime({ config })).resolves.toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_CONFIG',
+        cause: expect.any(Error)
+      }
     });
 
     await writeFile(config, '[adapters.qq]\ntype = "napcat"\nbase_url = "ws://localhost"\n');
-    await expect(makePushClient(config)).rejects.toMatchObject({
-      code: 'INVALID_CONFIG',
-      message: expect.stringContaining('adapter "qq"')
+    await expect(makePushRuntime({ config })).resolves.toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_CONFIG',
+        message: expect.stringContaining('adapter "qq"')
+      }
     });
   });
 });

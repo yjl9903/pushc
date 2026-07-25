@@ -9,6 +9,7 @@ import { isNonEmptyString, isRecord } from './utils/value.js';
 export interface LoadedConfig {
   path: string;
   config: unknown;
+  redactions: readonly string[];
 }
 
 export interface FindConfigPathOptions {
@@ -148,7 +149,12 @@ export async function loadConfig(options: LoadConfigOptions): Promise<LoadedConf
     });
   }
 
-  return { path, config: expandEnvironment(parsed, env) };
+  const redactions = new Set<string>();
+  return {
+    path,
+    config: expandEnvironment(parsed, env, redactions),
+    redactions: Object.freeze([...redactions].sort((a, b) => b.length - a.length))
+  };
 }
 
 export function parsePushConfig(input: unknown): PushConfig {
@@ -198,9 +204,14 @@ export function parsePushConfig(input: unknown): PushConfig {
   });
 }
 
-function expandEnvironment(input: unknown, env: NodeJS.ProcessEnv): unknown {
+function expandEnvironment(
+  input: unknown,
+  env: NodeJS.ProcessEnv,
+  redactions: Set<string>
+): unknown {
   if (typeof input === 'string') {
-    return input.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
+    let expanded = false;
+    const value = input.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
       const value = env[name];
       if (value === undefined) {
         throw new ConfigError(
@@ -208,18 +219,40 @@ function expandEnvironment(input: unknown, env: NodeJS.ProcessEnv): unknown {
           `Environment variable ${name} is required by the config.`
         );
       }
+      expanded = true;
+      trackRedaction(redactions, value);
       return value;
     });
+    if (expanded) trackRedaction(redactions, value);
+    return value;
   }
   if (Array.isArray(input)) {
-    return input.map((item) => expandEnvironment(item, env));
+    return input.map((item) => expandEnvironment(item, env, redactions));
   }
   if (isRecord(input)) {
     return Object.fromEntries(
-      Object.entries(input).map(([key, value]) => [key, expandEnvironment(value, env)])
+      Object.entries(input).map(([key, value]) => [key, expandEnvironment(value, env, redactions)])
     );
   }
   return input;
+}
+
+function trackRedaction(redactions: Set<string>, value: string): void {
+  for (const candidate of new Set([value, value.trim()])) {
+    if (candidate === '') continue;
+    redactions.add(candidate);
+    try {
+      redactions.add(encodeURI(candidate));
+      redactions.add(encodeURIComponent(candidate));
+    } catch {
+      // Keep the original value when malformed Unicode cannot be encoded.
+    }
+    try {
+      redactions.add(new URL(candidate).toString());
+    } catch {
+      // Most configuration strings are not complete URLs.
+    }
+  }
 }
 
 function configRecord(input: unknown, message: string): Record<string, unknown> {

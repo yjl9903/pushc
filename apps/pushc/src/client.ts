@@ -3,11 +3,39 @@ import { WebhookAdapter } from '@pushc/adapter-webhook';
 import { PushClient, PushError, type AnyPushAdapter } from '@pushc/core';
 
 import { errorMessage } from './utils/error.js';
-import { loadConfig, parsePushConfig } from './config.js';
+import {
+  findConfigPath,
+  loadConfig,
+  parsePushConfig,
+  type FindConfigPathOptions
+} from './config.js';
 
-export async function makePushClient(configFilePath: string): Promise<PushClient> {
-  const loaded = await loadConfig({ path: configFilePath });
-  const config = parsePushConfig(loaded.config);
+export type PushRuntime =
+  | {
+      readonly success: true;
+      readonly client: PushClient;
+      readonly redactions: readonly string[];
+    }
+  | {
+      readonly success: false;
+      readonly error: unknown;
+      readonly redactions: readonly string[];
+    };
+
+export async function makePushRuntime(options: FindConfigPathOptions = {}): Promise<PushRuntime> {
+  let redactions: readonly string[] = [];
+  try {
+    const configFilePath = await findConfigPath(options);
+    const loaded = await loadConfig({ path: configFilePath, env: options.env });
+    redactions = loaded.redactions;
+    const client = await createPushClient(parsePushConfig(loaded.config));
+    return { success: true, client, redactions };
+  } catch (error) {
+    return { success: false, error, redactions };
+  }
+}
+
+async function createPushClient(config: ReturnType<typeof parsePushConfig>): Promise<PushClient> {
   const client = new PushClient();
 
   for (const [name, definition] of Object.entries(config.adapters)) {

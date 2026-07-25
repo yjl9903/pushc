@@ -2,31 +2,91 @@ import { describe, expect, it } from 'vitest';
 import { PushError } from '@pushc/core';
 import { breadc } from 'breadc';
 import { CliError } from '../src/utils/error.js';
-import { formatError, formatSuccess, formatTargets } from '../src/utils/format.js';
+import {
+  formatError,
+  formatSendResult,
+  formatTargets,
+  getSendResultExitCode
+} from '../src/utils/format.js';
 
 describe('CLI formatting', () => {
   it('formats send results', () => {
     expect(
-      formatSuccess(
+      formatSendResult(
         {
+          success: true,
           target: 'ops',
           adapter: 'webhook',
-          receipt: { status: 204 }
+          receipt: {
+            summary: 'Webhook POST to example.com completed with HTTP 204.',
+            request: { url: 'https://example.com/token', headers: {} },
+            response: { status: 204 }
+          }
         },
         false
       )
-    ).toBe('Sent to webhook:ops (HTTP 204).\n');
+    ).toBe(
+      'Send succeeded: webhook:ops\nSummary: Webhook POST to example.com completed with HTTP 204.\n'
+    );
 
-    expect(JSON.parse(formatSuccess({ adapter: 'webhook', receipt: { status: 204 } }, true)))
-      .toMatchInlineSnapshot(`
+    expect(
+      JSON.parse(
+        formatSendResult(
+          {
+            success: true,
+            adapter: 'webhook',
+            receipt: {
+              request: { url: 'https://example.com/secret', headers: { authorization: 'secret' } },
+              response: { status: 204 }
+            }
+          },
+          true,
+          ['secret']
+        )
+      )
+    ).toMatchInlineSnapshot(`
       {
         "adapter": "webhook",
-        "ok": true,
         "receipt": {
-          "status": 204,
+          "request": {
+            "headers": {
+              "authorization": "[REDACTED]",
+            },
+            "url": "https://example.com/[REDACTED]",
+          },
+          "response": {
+            "status": 204,
+          },
         },
+        "success": true,
       }
     `);
+
+    expect(
+      formatSendResult(
+        {
+          success: false,
+          adapter: 'qq',
+          target: 'ops',
+          receipt: {
+            request: { value: 'long-secret and secret' }
+          },
+          error: { code: 'SEND_FAILED', message: 'failed with long-secret' }
+        },
+        false,
+        ['long-secret', 'secret']
+      )
+    ).toBe('Send failed: qq:ops\nError: failed with [REDACTED]\n');
+
+    expect(
+      formatSendResult(
+        {
+          success: false,
+          error: { code: 'CONFIG_NOT_FOUND', message: 'No pushc config found.' }
+        },
+        false
+      )
+    ).toBe('Error: No pushc config found.\n');
   });
 
   it('formats target lists', () => {
@@ -34,7 +94,7 @@ describe('CLI formatting', () => {
     expect(formatTargets(targets, false)).toBe('webhook\nqq:ops\n');
     expect(JSON.parse(formatTargets(targets, true))).toMatchInlineSnapshot(`
       {
-        "ok": true,
+        "success": true,
         "targets": [
           {
             "adapter": "webhook",
@@ -48,26 +108,52 @@ describe('CLI formatting', () => {
     `);
   });
 
+  it('maps send result codes to process exit codes', () => {
+    expect(
+      getSendResultExitCode({
+        success: true,
+        adapter: 'webhook',
+        receipt: { request: {} }
+      })
+    ).toBe(0);
+    expect(
+      getSendResultExitCode({
+        success: false,
+        error: { code: 'SEND_FAILED', message: 'offline' }
+      })
+    ).toBe(1);
+    expect(
+      getSendResultExitCode({
+        success: false,
+        error: { code: 'TARGET_NOT_FOUND', message: 'missing' }
+      })
+    ).toBe(2);
+  });
+
   it('formats contextual and context-free errors', () => {
     const cli = breadc('test').option('--json');
     cli.command('send');
     const ctx = cli.parse(['send', '--json']).context;
     const error = new CliError(
-      new PushError('TARGET_NOT_FOUND', 'Target "missing" is not defined.'),
-      ctx
+      new PushError(
+        'TARGET_NOT_FOUND',
+        'Target "missing" exposed https://example.com/private-token.'
+      ),
+      ctx,
+      ['https://example.com/private-token']
     );
 
     expect(formatError(error)).toMatchInlineSnapshot(`
       {
         "exitCode": 2,
-        "output": "{"ok":false,"error":{"code":"TARGET_NOT_FOUND","message":"Target \\"missing\\" is not defined."}}
+        "output": "{"success":false,"error":{"code":"TARGET_NOT_FOUND","message":"Target \\"missing\\" exposed [REDACTED]."}}
       ",
       }
     `);
     expect(formatError(new Error('Could not parse arguments.'))).toMatchInlineSnapshot(`
       {
         "exitCode": 1,
-        "output": "pushc: Could not parse arguments.
+        "output": "Error: Could not parse arguments.
       ",
       }
     `);

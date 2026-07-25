@@ -34,8 +34,9 @@ targets；target 是 adapter-specific partial config。系统当前支持通用 
 4. CLI 从参数、文件或 stdin 读取消息，组合 `--title`/`--param` payload，并把
    `--target <adapter[:target]>` string 交给 client。
 5. client 解析 destination 并取得 adapter；adapter 校验 payload/options，将省略的 target、
-   具名字符串或临时对象解析为具体 target，执行平台发送并返回 receipt。
-6. core 生成统一 `PushResult`；CLI 将成功结果写入 stdout，将结构化错误写入 stderr，并映射退出码。
+   具名字符串或临时对象解析为具体 target，执行平台发送并返回包含 receipt/error 的 outcome。
+6. core 将 destination 上下文与 adapter outcome 合并为统一 `PushResult`；CLI 将成功结果写入
+   stdout，将结构化错误写入 stderr，并映射退出码。
 
 ## 架构约束
 

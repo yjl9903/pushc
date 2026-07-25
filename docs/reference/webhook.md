@@ -15,16 +15,16 @@
 
 四个服务的基础发送都能归一为一次 HTTP 请求：
 
-| 能力           | 用途                                                                        |
-| -------------- | --------------------------------------------------------------------------- |
-| `url`                    | 配置静态可信服务端地址，并确定允许请求的 origin。                            |
-| `request.url`            | 可选动态 endpoint；未配置时使用顶层 `url`。                                 |
-| `request.method`         | 本批服务使用 `POST`；ntfy 也接受 `PUT`。                                    |
-| `request.headers`        | 配置 Bearer Token、服务专用 Token 及其他请求 header。                       |
-| `request.content_type`   | 使用标准 media type 选择请求体编码，如 `application/json` 或 `text/plain`。 |
-| `request.body`           | 保留服务原始字段，并在任意字符串值中插入 `{{message}}`。                    |
-| `request.timeout_ms`     | 限制请求等待时间。                                                          |
-| `response`               | 空占位；本阶段不解析响应。                                                  |
+| 能力                   | 用途                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| `url`                  | 配置静态可信服务端地址，并确定允许请求的 origin。                             |
+| `request.url`          | 可选动态 endpoint；未配置时使用顶层 `url`。                                   |
+| `request.method`       | 本批服务使用 `POST`；ntfy 也接受 `PUT`。                                      |
+| `request.headers`      | 配置 Bearer Token、服务专用 Token 及其他请求 header。                         |
+| `request.content_type` | 使用标准 media type 选择请求体编码，如 `application/json` 或 `text/plain`。   |
+| `request.body`         | 保留服务原始字段，并在任意字符串值中插入 `{{message}}`。                      |
+| `request.timeout_ms`   | 限制请求等待时间。                                                            |
+| `response`             | 空配置占位；receipt 始终记录 status、过滤后的 headers，并尽力解析 JSON body。 |
 
 `config.toml` 是允许 agent 阅读的明文，不得包含任何真实秘密。Token、key、password 和
 其他 credential 必须放在配置文件旁的 `.env` 或进程环境中，`config.toml` 只通过

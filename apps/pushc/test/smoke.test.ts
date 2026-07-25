@@ -36,7 +36,7 @@ describe('built CLI', () => {
           "code": "CONFIG_NOT_FOUND",
           "message": Any<String>,
         },
-        "ok": false,
+        "success": false,
       }
     `
     );
@@ -56,7 +56,7 @@ describe('built CLI', () => {
           "code": "INVALID_TARGET",
           "message": "The --target option is required.",
         },
-        "ok": false,
+        "success": false,
       }
     `);
   });
@@ -78,7 +78,7 @@ describe('built CLI', () => {
       expect(result.status).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchInlineSnapshot(`
         {
-          "ok": true,
+          "success": true,
           "targets": [
             {
               "adapter": "qq",

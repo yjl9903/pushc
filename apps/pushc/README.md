@@ -43,6 +43,7 @@ level = "active"
 [adapters.qq]
 type = "napcat"
 base_url = "ws://127.0.0.1:3001"
+access_token = "${NAPCAT_TOKEN}"
 
 [adapters.qq.targets.qq-group]
 group_id = "123456789"
@@ -55,6 +56,8 @@ Example `.pushc/.env`:
 
 ```dotenv
 BARK_DEVICE_KEY=replace-with-your-bark-device-key
+
+NAPCAT_TOKEN=replace-with-your-napcat-token
 ```
 
 ### Commands

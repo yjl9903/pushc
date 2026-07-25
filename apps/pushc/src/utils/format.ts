@@ -1,6 +1,13 @@
 import { formatDestination, type PushResult } from '@pushc/core';
-import { getErrorExitCode, isJsonCliError, normalizeError, unwrapCliError } from './error.js';
-import { isRecord } from './value.js';
+import {
+  cliErrorRedactions,
+  getErrorCodeExitCode,
+  getErrorExitCode,
+  isJsonCliError,
+  normalizeError,
+  unwrapCliError
+} from './error.js';
+import { redactForOutput } from './redact.js';
 
 export interface CliTargetSummary {
   adapter: string;
@@ -12,23 +19,31 @@ export interface CliFailure {
   exitCode: number;
 }
 
-export function formatSuccess(result: PushResult, json: boolean): string {
+export function formatSendResult(
+  result: PushResult,
+  json: boolean,
+  redactions: readonly string[] = []
+): string {
+  const output = redactForOutput(result, redactions);
   if (json) {
-    return `${JSON.stringify({ ok: true, ...result })}\n`;
+    return `${JSON.stringify(output)}\n`;
   }
 
-  let detail = '';
-  if (isRecord(result.receipt) && typeof result.receipt.messageId === 'string') {
-    detail = ` (message ${result.receipt.messageId})`;
-  } else if (isRecord(result.receipt) && typeof result.receipt.status === 'number') {
-    detail = ` (HTTP ${result.receipt.status})`;
+  if (!output.success) {
+    const destination =
+      output.adapter === undefined
+        ? ''
+        : `Send failed: ${formatDestination(output.adapter, output.target)}\n`;
+    return `${destination}Error: ${output.error.message}\n`;
   }
-  return `Sent to ${formatDestination(result.adapter, result.target)}${detail}.\n`;
+  return `Send succeeded: ${formatDestination(output.adapter, output.target)}\n${
+    output.receipt.summary ? `Summary: ${output.receipt.summary}\n` : ''
+  }`;
 }
 
 export function formatTargets(targets: readonly CliTargetSummary[], json: boolean): string {
   if (json) {
-    return `${JSON.stringify({ ok: true, targets })}\n`;
+    return `${JSON.stringify({ success: true, targets })}\n`;
   }
   if (targets.length === 0) {
     return 'No targets configured.\n';
@@ -40,11 +55,15 @@ export function formatTargets(targets: readonly CliTargetSummary[], json: boolea
 
 export function formatError(error: unknown): CliFailure {
   const cause = unwrapCliError(error);
-  const normalized = normalizeError(cause);
+  const normalized = redactForOutput(normalizeError(cause), cliErrorRedactions(error));
   return {
     output: isJsonCliError(error)
-      ? `${JSON.stringify({ ok: false, error: normalized })}\n`
-      : `pushc: ${normalized.message}\n`,
+      ? `${JSON.stringify({ success: false, error: normalized })}\n`
+      : `Error: ${normalized.message}\n`,
     exitCode: getErrorExitCode(cause)
   };
+}
+
+export function getSendResultExitCode(result: PushResult): number {
+  return result.success ? 0 : getErrorCodeExitCode(result.error.code);
 }

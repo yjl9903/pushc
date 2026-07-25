@@ -1,3 +1,5 @@
+import type { PushReceipt } from '@pushc/core';
+
 export interface NapCatConfig {
   base_url: string;
   access_token?: string;
@@ -7,18 +9,32 @@ export interface NapCatConfig {
 export type NapCatTargetConfig =
   { user_id: string; group_id?: never } | { user_id?: never; group_id: string };
 
-export interface NapCatReceipt {
-  messageId: string;
+export interface NapCatTextSegment {
+  readonly type: 'text';
+  readonly data: { readonly text: string };
 }
+
+export type NapCatSendMessageParams = (
+  { readonly user_id: number } | { readonly group_id: number }
+) & {
+  message: NapCatTextSegment[];
+};
+
+export interface NapCatRequestReceipt {
+  readonly method: 'send_msg';
+  readonly params: NapCatSendMessageParams;
+}
+
+export interface NapCatResponseReceipt {
+  readonly messageId: string;
+}
+
+export type NapCatReceipt = PushReceipt<NapCatRequestReceipt, NapCatResponseReceipt>;
 
 export interface NapCatClient {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
-  send_msg(
-    params: ({ user_id: number } | { group_id: number }) & {
-      message: Array<{ type: 'text'; data: { text: string } }>;
-    }
-  ): Promise<{ message_id: number | string }>;
+  send_msg(params: NapCatSendMessageParams): Promise<{ message_id: number | string }>;
 }
 
 export interface NapCatClientOptions {

@@ -65,7 +65,7 @@ JSON output:
 
 ```json
 {
-  "ok": true,
+  "success": true,
   "targets": [
     { "adapter": "deploy", "target": "release" },
     { "adapter": "qq", "target": "ops-group" }
@@ -109,19 +109,29 @@ keys fail with `CLI_USAGE`. These options are not credential channels.
 Text success examples:
 
 ```text
-Sent to deploy:release (HTTP 204).
-Sent to qq:ops-group (message 12345).
+Send succeeded: deploy:release
+Summary: Webhook POST to hooks.example.com completed with HTTP 204.
+Send succeeded: qq:ops-group
+Summary: NapCat sent a message to group 123456 (message ID: 12345).
 ```
 
-Receipt details appear only when the adapter exposes a safe HTTP status or message ID. JSON success
-preserves the result fields:
+Text details come from the unified receipt summary. JSON preserves the complete redacted receipt:
 
 ```json
 {
-  "ok": true,
+  "success": true,
   "adapter": "deploy",
   "target": "release",
-  "receipt": { "status": 204 }
+  "receipt": {
+    "summary": "Webhook POST to hooks.example.com completed with HTTP 204.",
+    "request": {
+      "url": "[REDACTED]",
+      "method": "POST",
+      "headers": {},
+      "timeout_ms": 10000
+    },
+    "response": { "status": 204, "headers": {} }
+  }
 }
 ```
 
@@ -139,16 +149,36 @@ See [configuration.md](configuration.md) for schemas and examples.
 
 ## Output and exit status
 
-Errors normally use this text form on stderr:
+Errors without a valid send destination use this text form on stderr:
 
 ```text
-pushc: <message>
+Error: <message>
 ```
 
 Contextual errors with `--json` use:
 
 ```json
-{ "ok": false, "error": { "code": "CONFIG_NOT_FOUND", "message": "..." } }
+{ "success": false, "error": { "code": "CONFIG_NOT_FOUND", "message": "..." } }
+```
+
+Send failures retain every available destination and receipt field:
+
+```text
+Send failed: deploy:release
+Error: Webhook returned HTTP 503.
+```
+
+```json
+{
+  "success": false,
+  "adapter": "deploy",
+  "target": "release",
+  "receipt": {
+    "request": {},
+    "response": { "status": 503, "headers": {} }
+  },
+  "error": { "code": "SEND_FAILED", "message": "Webhook returned HTTP 503." }
+}
 ```
 
 Exit statuses:
@@ -165,10 +195,9 @@ Common codes include `CLI_USAGE`, `CONFIG_NOT_FOUND`, `CONFIG_READ_FAILED`, `CON
 
 ## Operational behavior
 
-Both commands destroy initialized clients and close persistent connections before exiting. `targets`
-may therefore contact services during adapter initialization; notably, NapCat connects to its
-WebSocket API. Webhook initialization does not issue the configured HTTP request. Only `send`
-delivers a notification.
+Both commands destroy initialized clients and close persistent connections before exiting. Current
+adapters initialize without issuing a platform request; NapCat connects lazily on its first send,
+and Webhook only issues its configured HTTP request during send.
 
 Do not automatically retry sends. A transport failure can be ambiguous, and retrying may duplicate a
 notification.

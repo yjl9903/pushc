@@ -12,9 +12,11 @@ adapter 产品语义。`config.toml` 是可供 agent 阅读和修改的非敏感
 app 层读取 TOML、由运行时加载相邻 `.env` 并递归展开 `${ENV_NAME}`；core 和 adapters
 不访问文件或环境。
 
-`makePushClient` 构造 adapter、注册具名 target、执行可选 initialize，再注册到 client。
-任一步失败会销毁已创建资源并归一化为稳定配置错误。`targets` 只解析配置、初始化 adapter
-并列出 destination；不构造 webhook request，也不发送测试消息。
+`makePushRuntime(options)` 统一完成配置发现、加载、adapter 构造、具名 target 注册和可选
+initialize，并返回 `{ success: true, client, redactions }` 或
+`{ success: false, error, redactions }`。任一步失败会销毁已创建资源；CLI 不重复配置路径模板。
+`targets` 只解析配置、初始化 adapter 并列出 destination；不构造 webhook request，也不发送
+测试消息。
 
 ## `pushc send`
 
@@ -35,11 +37,18 @@ string Record，不解析 JSON 或创建嵌套结构。
 
 ## 输出与错误
 
-成功 text/JSON output 的外层格式保持现状；webhook receipt 为 `{ status }`，NapCat receipt
-为 `{ messageId }`。配置、destination、payload、options 与 CLI usage 错误 exit 2；实际发送
-失败 exit 1。错误输出不展示 resolved adapter/target 配置或秘密。destination 展示统一使用
-core 的 `formatDestination`；CLI 不维护独立的 destination parser 或 formatter。每次命令在
-成功和失败路径都销毁 client。
+send JSON 直接输出完整统一 `PushResult`；其他错误输出 `{ success: false, error }`，
+targets 成功输出 `{ success: true, targets }`。普通文本成功为
+`Send succeeded: adapter[:target]`，summary 另起 `Summary:` 行；失败为
+`Send failed: adapter[:target]` 与 `Error:` 行，无可信 destination 时只输出 `Error:`。
+不使用 `pushc:` 前缀。
+
+配置加载收集 TOML 中实际 `${NAME}` 引用的非空环境变量值、完成替换后的配置字符串，以及
+它们经 trim、URL 编码和完整 URL 规范化后的形式。CLI 在 text/JSON 输出前复制输出对象，按值
+长度降序把所有 string value 中的命中替换为 `[REDACTED]`；有限 number 的十进制字符串与
+某个跟踪值完全相等时也替换，以覆盖 adapter 的数字规范化。Node API 返回未脱敏的完整
+receipt。未被配置引用的环境变量不参与扫描。destination 展示统一使用 core 的
+`formatDestination`；每次命令在成功和失败路径都销毁 client。
 
 ## 测试边界
 

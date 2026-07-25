@@ -44,7 +44,20 @@ describe('webhook configuration and targets', () => {
     `);
     await expect(adapter.send(undefined, { message: 'hello' })).resolves.toMatchInlineSnapshot(`
       {
-        "status": 204,
+        "receipt": {
+          "request": {
+            "headers": {},
+            "method": "POST",
+            "timeout_ms": 10000,
+            "url": "https://example.com/hook",
+          },
+          "response": {
+            "headers": {},
+            "status": 204,
+          },
+          "summary": "Webhook POST to example.com completed with HTTP 204.",
+        },
+        "success": true,
       }
     `);
 
@@ -285,6 +298,24 @@ describe('webhook templates and requests', () => {
     ).toBe(1234);
   });
 
+  it('records the same normalized headers that fetch receives', async () => {
+    const fetch = okFetch();
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com',
+        request: { headers: { 'X-Token': '  token\t ' } }
+      },
+      { fetch }
+    );
+
+    const result = await adapter.send(undefined, { message: 'hello' });
+    expect(result).toMatchObject({
+      success: true,
+      receipt: { request: { headers: { 'x-token': 'token' } } }
+    });
+    expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('x-token')).toBe('token');
+  });
+
   it('renders payload fields into request URL, headers and JSON string values', async () => {
     const fetch = okFetch();
     const adapter = new WebhookAdapter(
@@ -402,7 +433,10 @@ describe('webhook templates and requests', () => {
         message: 'ok',
         param: { type: 'text/plain' }
       })
-    ).rejects.toMatchObject({ code: 'INVALID_CONFIG' });
+    ).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_CONFIG' }
+    });
   });
 
   it('does not parse or add Content-Type when body is absent', async () => {
@@ -428,8 +462,9 @@ describe('webhook templates and requests', () => {
     'https://user:secret@example.com/hook'
   ])('rejects unsafe target URL %s at send time', async (url) => {
     const adapter = new WebhookAdapter({ url: 'https://example.com/base' }, { fetch: okFetch() });
-    await expect(adapter.send({ request: { url } }, { message: 'ok' })).rejects.toMatchObject({
-      code: 'INVALID_CONFIG'
+    await expect(adapter.send({ request: { url } }, { message: 'ok' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_CONFIG' }
     });
   });
 
@@ -501,7 +536,7 @@ function errorSummary(error: unknown): unknown {
 
 describe('webhook errors and lifecycle', () => {
   it.each([0, false, '', null])('preserves falsy WebhookError causes %#', (cause) => {
-    const error = new WebhookError('ABORTED', 'aborted', { cause });
+    const error = new WebhookError('INVALID_CONFIG', 'invalid', { cause });
     expect(error.cause).toBe(cause);
   });
 
@@ -514,15 +549,19 @@ describe('webhook errors and lifecycle', () => {
         )
       }
     );
-    await expect(adapter.send(undefined, { message: 'ok' })).rejects.toMatchObject({
-      code: 'HTTP_ERROR',
-      status: 503
+    await expect(adapter.send(undefined, { message: 'ok' })).resolves.toMatchObject({
+      success: false,
+      receipt: { response: { status: 503 } },
+      error: { code: 'SEND_FAILED', message: 'Webhook returned HTTP 503.' }
     });
   });
 
   it('reports unavailable fetch directly', async () => {
     const adapter = new WebhookAdapter({ url: 'https://example.com' }, { fetch: 0 as never });
-    await expect(adapter.send(undefined, { message: 'ok' })).rejects.toBeInstanceOf(WebhookError);
+    await expect(adapter.send(undefined, { message: 'ok' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'This runtime does not provide fetch.' }
+    });
   });
 
   it('aborts requests after timeout and caller cancellation', async () => {
@@ -538,8 +577,9 @@ describe('webhook errors and lifecycle', () => {
       { url: 'https://example.com', request: { timeout_ms: 5 } },
       { fetch }
     );
-    await expect(adapter.send(undefined, { message: 'hello' })).rejects.toMatchObject({
-      code: 'ABORTED'
+    await expect(adapter.send(undefined, { message: 'hello' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: expect.stringContaining('timed out') }
     });
 
     const controller = new AbortController();
@@ -551,6 +591,61 @@ describe('webhook errors and lifecycle', () => {
       }
     );
     controller.abort(new Error('cancelled'));
-    await expect(pending).rejects.toMatchObject({ code: 'ABORTED' });
+    await expect(pending).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'Webhook request was aborted.' }
+    });
+  });
+
+  it('keeps structured request bodies and parses safe response data', async () => {
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com:8443/hook',
+        request: {
+          headers: { authorization: 'Bearer secret', 'x-trace': 'request-trace' },
+          body: { text: '{{message}}' }
+        }
+      },
+      {
+        fetch: vi.fn(
+          async () =>
+            new Response('{"accepted":true}', {
+              status: 202,
+              headers: {
+                'content-type': 'application/json',
+                'x-trace': 'response-trace',
+                'www-authenticate': 'secret'
+              }
+            })
+        )
+      }
+    );
+
+    await expect(adapter.send(undefined, { message: 'hello' })).resolves.toEqual({
+      success: true,
+      receipt: {
+        summary: 'Webhook POST to example.com:8443 completed with HTTP 202.',
+        request: {
+          url: 'https://example.com:8443/hook',
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer secret',
+            'content-type': 'application/json',
+            'x-trace': 'request-trace'
+          },
+          content_type: 'application/json',
+          timeout_ms: 10_000,
+          body: { text: 'hello' }
+        },
+        response: {
+          status: 202,
+          headers: {
+            'content-type': 'application/json',
+            'x-trace': 'response-trace'
+          },
+          body: { accepted: true }
+        }
+      }
+    });
   });
 });

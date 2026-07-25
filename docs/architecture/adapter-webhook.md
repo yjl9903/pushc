@@ -19,14 +19,14 @@ adapter 顶层只接受：
 adapter 与 target 的 `request` 使用相同的 snake_case 字段；target 顶层只接受
 `request`/`response` partial：
 
-| request 字段 | 默认值 | 规则 |
-| --- | --- | --- |
-| `url` | adapter 顶层 `url` | 可含模板；最终必须是与静态 URL 同 origin 的绝对 HTTP(S) URL |
-| `method` | `POST` | trim、转大写、满足 HTTP token，拒绝 CONNECT/TRACE/TRACK |
-| `headers` | 空 | string table，name 大小写不敏感 |
-| `content_type` | body 存在时 `application/json` | 仅支持 JSON/text 与可选 UTF-8 charset |
-| `timeout_ms` | `10000` | `1..2_147_483_647` 的整数或同范围 bigint |
-| `body` | 无 | JSON value 或 string，不自动生成默认 body |
+| request 字段   | 默认值                         | 规则                                                        |
+| -------------- | ------------------------------ | ----------------------------------------------------------- |
+| `url`          | adapter 顶层 `url`             | 可含模板；最终必须是与静态 URL 同 origin 的绝对 HTTP(S) URL |
+| `method`       | `POST`                         | trim、转大写、满足 HTTP token，拒绝 CONNECT/TRACE/TRACK     |
+| `headers`      | 空                             | string table，name 大小写不敏感                             |
+| `content_type` | body 存在时 `application/json` | 仅支持 JSON/text 与可选 UTF-8 charset                       |
+| `timeout_ms`   | `10000`                        | `1..2_147_483_647` 的整数或同范围 bigint                    |
+| `body`         | 无                             | JSON value 或 string，不自动生成默认 body                   |
 
 旧平铺 request 字段和其他未知字段为 `INVALID_CONFIG`，不提供兼容层。
 
@@ -39,6 +39,10 @@ JSON object 物化为 null-prototype copy。
 JSON body 通过带 replacer 的 `JSON.stringify` 与 `JSON.parse` 标准化。只接受 JSON-shaped
 value；safe bigint 转 number，拒绝非 finite number、unsafe bigint、undefined、symbol、
 function 与循环结构。
+
+`src/utils/json.ts` 集中维护 JSON value 识别、深拷贝和 null-prototype 转换；
+`src/utils/record.ts` 集中维护 plain record 识别及 Map 到安全 record 的物化。二者是内部
+纯工具，不从 package root 导出；配置解析、请求构造和发送生命周期仍留在对应领域模块。
 
 ## 模板
 
@@ -67,15 +71,19 @@ Map 与 JSON tree：
 8. `WebhookRequest` 携带 resolved `timeout_ms`；请求构造完成后才由发送函数启动 timeout，
    组合 parent signal 并调用 Fetch；所有出口清理 timer/listener。
 
-Webhook 仍只以 `response.ok` 判断成功，receipt 为 `{ status }`。Fetch 不可用、
-HTTP、timeout、取消和 transport error 保持发送错误语义，不增加 retry。
+Webhook 以 `response.ok`（HTTP 200–299）判断成功，不增加 retry。统一 receipt request
+记录最终 URL、method、经 `Headers` 规范化后的 headers、content type、timeout 和渲染后的
+body；Fetch 使用同一份规范化 header record，JSON body 保留序列化前的 `JsonValue`，实际
+Fetch body 从同一值生成。response 记录 status、过滤常见鉴权字段后的 headers，并 best-effort
+解析 JSON body。成功 summary 记录 method、最终 URL 的 host 和 HTTP status。非 2xx、Fetch
+不可用、timeout、取消和 transport error 在请求形成后返回包含 receipt 的失败 outcome。
 
 ## 错误边界
 
 配置与 send-time request 构造错误使用 sanitized `WebhookError('INVALID_CONFIG')`，保留
 cause，不在 public message 中包含 URL、header 或 body。`parseTarget` 和 `sendTarget`
 分别将该错误映射为 `PushError('INVALID_CONFIG')`，确保 adapter、client 与 CLI 一致。
-transport/HTTP/abort 错误不做该映射。
+transport、HTTP 和 abort 错误转换为统一失败 outcome，不做配置错误映射。
 
 ## 测试边界
 

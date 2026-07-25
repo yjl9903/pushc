@@ -5,14 +5,14 @@ import { formatDestination, PushError } from '@pushc/core';
 
 import packageJson from '../package.json' with { type: 'json' };
 
-import { makePushClient } from './client.js';
-import { findConfigPath } from './config.js';
+import { makePushRuntime } from './client.js';
 import { parseParamEntries, resolveMessage } from './input.js';
-import { CliError } from './utils/error.js';
+import { CliError, normalizeError } from './utils/error.js';
 import {
   formatError,
-  formatSuccess,
+  formatSendResult,
   formatTargets,
+  getSendResultExitCode,
   type CliTargetSummary
 } from './utils/format.js';
 
@@ -30,46 +30,79 @@ cli
   .option('--param [...entry]', 'Set string payload parameters as key=value')
   .option('-f, --file <path>', 'Read message content from a UTF-8 file')
   .action(async (content, options, ctx) => {
+    let destination: string;
+    let param: ReturnType<typeof parseParamEntries>;
     try {
       if (typeof options.target !== 'string') {
         throw new PushError('INVALID_TARGET', 'The --target option is required.');
       }
-      const destination = options.target;
-      const param = parseParamEntries(options.param);
-      const configPath = await findConfigPath({
-        ...(options.config ? { config: options.config } : {})
-      });
-      const client = await makePushClient(configPath);
-      const result = await (async () => {
-        try {
-          const message = await resolveMessage({
-            content,
-            ...(options.file ? { file: options.file } : {})
-          });
-          return await client.send(destination, {
-            message,
-            ...(options.title === undefined ? {} : { title: options.title }),
-            ...(param === undefined ? {} : { param })
-          });
-        } finally {
-          await client.destroy();
-        }
-      })();
-      process.stdout.write(formatSuccess(result, options.json));
+      destination = options.target;
+      param = parseParamEntries(options.param);
     } catch (error) {
       throw new CliError(error, ctx);
+    }
+
+    const runtime = await makePushRuntime({
+      ...(options.config ? { config: options.config } : {})
+    });
+    if (!runtime.success) {
+      throw new CliError(runtime.error, ctx, runtime.redactions);
+    }
+
+    try {
+      let result;
+      try {
+        const message = await resolveMessage({
+          content,
+          ...(options.file ? { file: options.file } : {})
+        });
+        result = await runtime.client.send(destination, {
+          message,
+          ...(options.title === undefined ? {} : { title: options.title }),
+          ...(param === undefined ? {} : { param })
+        });
+      } catch (error) {
+        await runtime.client.destroy().catch(() => undefined);
+        throw error;
+      }
+      try {
+        await runtime.client.destroy();
+      } catch (error) {
+        if (result.success) {
+          result = {
+            success: false,
+            adapter: result.adapter,
+            ...(result.target === undefined ? {} : { target: result.target }),
+            receipt: result.receipt,
+            error: normalizeError(error)
+          };
+        }
+      }
+
+      const output = formatSendResult(result, options.json, runtime.redactions);
+      process.exitCode = getSendResultExitCode(result);
+      if (result.success) {
+        process.stdout.write(output);
+      } else {
+        process.stderr.write(output);
+      }
+    } catch (error) {
+      throw new CliError(error, ctx, runtime.redactions);
     }
   });
 
 cli.command('targets', 'List configured targets').action(async (options, ctx) => {
+  const runtime = await makePushRuntime({
+    ...(options.config ? { config: options.config } : {})
+  });
+  if (!runtime.success) {
+    throw new CliError(runtime.error, ctx, runtime.redactions);
+  }
+
   try {
-    const configPath = await findConfigPath({
-      ...(options.config ? { config: options.config } : {})
-    });
-    const client = await makePushClient(configPath);
     const targets = await (async () => {
       try {
-        return [...client.adapters]
+        return [...runtime.client.adapters]
           .flatMap(([adapterName, adapter]): CliTargetSummary[] =>
             adapter.targets.size === 0
               ? [{ adapter: adapterName }]
@@ -84,12 +117,12 @@ cli.command('targets', 'List configured targets').action(async (options, ctx) =>
             )
           );
       } finally {
-        await client.destroy();
+        await runtime.client.destroy();
       }
     })();
     process.stdout.write(formatTargets(targets, options.json));
   } catch (error) {
-    throw new CliError(error, ctx);
+    throw new CliError(error, ctx, runtime.redactions);
   }
 });
 

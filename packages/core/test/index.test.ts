@@ -4,7 +4,9 @@ import {
   PushClient,
   PushError,
   formatDestination,
+  type PushAdapterSendResult,
   type PushPayload,
+  type PushReceipt,
   type PushSendOptions
 } from '../src/index.js';
 
@@ -18,7 +20,9 @@ interface SentCall {
   readonly options: Readonly<PushSendOptions>;
 }
 
-class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, { id: string }> {
+type TestReceipt = PushReceipt<{ channel: string; message: string }, { id: string }>;
+
+class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestReceipt> {
   readonly contexts: SentCall[] = [];
   readonly parse = vi.fn((input: unknown): TestTarget => {
     if (typeof input !== 'object' || input === null || Array.isArray(input)) {
@@ -32,7 +36,7 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, { id: st
     target: TestTarget,
     payload: PushPayload,
     options: Readonly<PushSendOptions>
-  ) => Promise<{ id: string }>;
+  ) => Promise<PushAdapterSendResult<TestReceipt>>;
   readonly destroyImplementation?: () => Promise<void>;
 
   constructor(
@@ -43,7 +47,7 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, { id: st
         target: TestTarget,
         payload: PushPayload,
         options: Readonly<PushSendOptions>
-      ) => Promise<{ id: string }>;
+      ) => Promise<PushAdapterSendResult<TestReceipt>>;
       destroy?: () => Promise<void>;
     } = {}
   ) {
@@ -60,11 +64,15 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, { id: st
     target: TestTarget,
     payload: PushPayload,
     options: Readonly<PushSendOptions>
-  ): Promise<{ id: string }> {
+  ): Promise<PushAdapterSendResult<TestReceipt>> {
     this.contexts.push({ target, payload, options });
     return (
       (await this.sendImplementation?.(target, payload, options)) ?? {
-        id: `${target.channel}:${payload.message}`
+        success: true,
+        receipt: {
+          request: { channel: target.channel, message: payload.message },
+          response: { id: `${target.channel}:${payload.message}` }
+        }
       }
     );
   }
@@ -129,22 +137,20 @@ describe('PushTargets', () => {
     const adapter = new MemoryAdapter();
     adapter.targets.register('ops', { channel: 'ops' });
 
-    await expect(adapter.send(undefined, { message: 'default' })).resolves.toMatchInlineSnapshot(`
-      {
-        "id": "#default:default",
-      }
-    `);
-    await expect(adapter.send('ops', { message: 'named' })).resolves.toMatchInlineSnapshot(`
-      {
-        "id": "#ops:named",
-      }
-    `);
-    await expect(adapter.send({ channel: 'preview' }, { message: 'temporary' })).resolves
-      .toMatchInlineSnapshot(`
-      {
-        "id": "#preview:temporary",
-      }
-    `);
+    await expect(adapter.send(undefined, { message: 'default' })).resolves.toMatchObject({
+      success: true,
+      receipt: { response: { id: '#default:default' } }
+    });
+    await expect(adapter.send('ops', { message: 'named' })).resolves.toMatchObject({
+      success: true,
+      receipt: { response: { id: '#ops:named' } }
+    });
+    await expect(
+      adapter.send({ channel: 'preview' }, { message: 'temporary' })
+    ).resolves.toMatchObject({
+      success: true,
+      receipt: { response: { id: '#preview:temporary' } }
+    });
     expect([...adapter.targets.keys()]).toMatchInlineSnapshot(`
       [
         "ops",
@@ -205,8 +211,15 @@ describe('send boundaries', () => {
       {
         "adapter": "memory",
         "receipt": {
-          "id": "#default:default",
+          "request": {
+            "channel": "#default",
+            "message": "default",
+          },
+          "response": {
+            "id": "#default:default",
+          },
         },
+        "success": true,
       }
     `);
     await expect(
@@ -219,8 +232,15 @@ describe('send boundaries', () => {
       {
         "adapter": "memory",
         "receipt": {
-          "id": "#ops:ready",
+          "request": {
+            "channel": "#ops",
+            "message": "ready",
+          },
+          "response": {
+            "id": "#ops:ready",
+          },
         },
+        "success": true,
         "target": "ops",
       }
     `);
@@ -230,8 +250,15 @@ describe('send boundaries', () => {
       {
         "adapter": "memory",
         "receipt": {
-          "id": "#preview:test",
+          "request": {
+            "channel": "#preview",
+            "message": "test",
+          },
+          "response": {
+            "id": "#preview:test",
+          },
         },
+        "success": true,
       }
     `);
   });
@@ -273,8 +300,9 @@ describe('send boundaries', () => {
     [JSON.parse('{"message":"ok","__proto__":true}')],
     [{ message: 'ok', param: JSON.parse('{"__proto__":"value"}') }]
   ])('rejects invalid payload %#', async (payload) => {
-    await expect(new MemoryAdapter().send(undefined, payload as never)).rejects.toMatchObject({
-      code: 'INVALID_MESSAGE'
+    await expect(new MemoryAdapter().send(undefined, payload as never)).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_MESSAGE' }
     });
   });
 
@@ -282,16 +310,17 @@ describe('send boundaries', () => {
     const adapter = new MemoryAdapter();
     await expect(
       adapter.send(undefined, { message: 'ok' }, { signal: {} as AbortSignal })
-    ).rejects.toMatchObject({ code: 'INVALID_SEND_OPTIONS' });
-    await expect(adapter.send(undefined, { message: 'ok' }, null as never)).rejects.toMatchObject({
-      code: 'INVALID_SEND_OPTIONS'
+    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
+    await expect(adapter.send(undefined, { message: 'ok' }, null as never)).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_SEND_OPTIONS' }
     });
     await expect(
       adapter.send(undefined, { message: 'ok' }, { unknown: true } as never)
-    ).rejects.toMatchObject({ code: 'INVALID_SEND_OPTIONS' });
+    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
     await expect(
       adapter.send(undefined, { message: 'ok' }, JSON.parse('{"__proto__":true}') as never)
-    ).rejects.toMatchObject({ code: 'INVALID_SEND_OPTIONS' });
+    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
 
     const reason = new Error('cancelled');
     const signal = {
@@ -301,9 +330,9 @@ describe('send boundaries', () => {
       removeEventListener: vi.fn()
     } as unknown as AbortSignal;
     adapter.parse.mockClear();
-    await expect(adapter.send(undefined, { message: 'ok' }, { signal })).rejects.toMatchObject({
-      code: 'SEND_FAILED',
-      cause: reason
+    await expect(adapter.send(undefined, { message: 'ok' }, { signal })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'Message delivery was aborted.' }
     });
     expect(adapter.parse).not.toHaveBeenCalled();
   });
@@ -317,14 +346,37 @@ describe('send boundaries', () => {
     { adapter: 'memory', extra: true },
     { adapter: 'memory', target: [] }
   ])('rejects invalid destination %#', async (destination) => {
-    await expect(
-      createClient().send(destination as never, { message: 'ok' })
-    ).rejects.toMatchObject({ code: 'INVALID_TARGET' });
+    const result = await createClient().send(destination as never, { message: 'ok' });
+    expect(result).toMatchObject({ success: false, error: { code: 'INVALID_TARGET' } });
+    expect(result).not.toHaveProperty('adapter');
+    expect(result).not.toHaveProperty('target');
   });
 
   it('distinguishes missing adapters and normalizes concrete failures', async () => {
-    await expect(createClient().send('missing', { message: 'ok' })).rejects.toMatchObject({
-      code: 'ADAPTER_NOT_FOUND'
+    await expect(createClient().send('missing', { message: 'ok' })).resolves.toMatchObject({
+      success: false,
+      adapter: 'missing',
+      error: { code: 'ADAPTER_NOT_FOUND' }
+    });
+
+    await expect(createClient().send('memory:missing', { message: 'ok' })).resolves.toEqual({
+      success: false,
+      adapter: 'memory',
+      target: 'missing',
+      error: {
+        code: 'TARGET_NOT_FOUND',
+        message: 'Target "missing" is not defined.'
+      }
+    });
+
+    await expect(createClient().send('memory:ops', { message: '' })).resolves.toEqual({
+      success: false,
+      adapter: 'memory',
+      target: 'ops',
+      error: {
+        code: 'INVALID_MESSAGE',
+        message: 'Invalid push payload.'
+      }
     });
 
     const failure = { message: 'offline', status: 503 };
@@ -335,13 +387,104 @@ describe('send boundaries', () => {
         send: async () => Promise.reject(failure)
       }
     );
-    await expect(createClient(adapter).send('memory:ops', { message: 'ok' })).rejects.toMatchObject(
+    await expect(
+      createClient(adapter).send('memory:ops', { message: 'ok' })
+    ).resolves.toMatchObject({
+      success: false,
+      adapter: 'memory',
+      target: 'ops',
+      error: { code: 'SEND_FAILED' }
+    });
+  });
+
+  it('merges adapter failures and normalizes unexpected adapter exceptions', async () => {
+    const request = { channel: '#ops', message: 'hello' };
+    const adapterFailure = new MemoryAdapter(
+      '#',
+      {},
       {
-        code: 'SEND_FAILED',
-        message: expect.stringContaining('offline'),
-        cause: failure
+        send: async () => ({
+          success: false,
+          receipt: { request },
+          error: { code: 'SEND_FAILED', message: 'offline' }
+        })
       }
     );
+    await expect(
+      createClient(adapterFailure).send('memory:ops', { message: 'hello' })
+    ).resolves.toEqual({
+      success: false,
+      adapter: 'memory',
+      target: 'ops',
+      receipt: { request },
+      error: { code: 'SEND_FAILED', message: 'offline' }
+    });
+
+    const unexpected = new MemoryAdapter();
+    vi.spyOn(unexpected, 'send').mockRejectedValue(new Error('unexpected failure'));
+    await expect(
+      createClient(unexpected).send('memory:ops', { message: 'hello' })
+    ).resolves.toEqual({
+      success: false,
+      adapter: 'memory',
+      target: 'ops',
+      error: { code: 'SEND_FAILED', message: 'unexpected failure' }
+    });
+  });
+
+  it('only forwards fields defined by the public result contract', async () => {
+    const receipt = {
+      request: {
+        channel: '#default',
+        message: 'hello'
+      }
+    };
+    const adapter = new MemoryAdapter();
+    const send = vi.spyOn(adapter, 'send');
+    send
+      .mockResolvedValueOnce({
+        success: true,
+        receipt,
+        target: 'injected',
+        extra: 'leak'
+      } as never)
+      .mockResolvedValueOnce({
+        success: false,
+        receipt,
+        target: 'injected',
+        extra: 'leak',
+        error: {
+          code: 'SEND_FAILED',
+          message: 'offline',
+          cause: 'hidden'
+        }
+      } as never);
+    const client = createClient(adapter);
+
+    await expect(client.send('memory', { message: 'hello' })).resolves.toEqual({
+      success: true,
+      adapter: 'memory',
+      receipt
+    });
+    await expect(
+      client.send(
+        {
+          adapter: 'memory',
+          target: {
+            channel: '#preview'
+          }
+        },
+        { message: 'hello' }
+      )
+    ).resolves.toEqual({
+      success: false,
+      adapter: 'memory',
+      receipt,
+      error: {
+        code: 'SEND_FAILED',
+        message: 'offline'
+      }
+    });
   });
 });
 
@@ -368,7 +511,10 @@ describe('adapter registry lifecycle', () => {
     const client = createClient(new MemoryAdapter('#', {}, { destroy }));
     await Promise.all([client.destroy(), client.destroy()]);
     expect(destroy).toHaveBeenCalledOnce();
-    await expect(client.send('memory', { message: 'ok' })).rejects.toBeInstanceOf(PushError);
+    await expect(client.send('memory', { message: 'ok' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'CLIENT_DESTROYED' }
+    });
 
     const failing = new PushClient();
     failing.adapters.register(

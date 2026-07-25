@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { WebhookError } from './error.js';
+import { cloneJson, isJsonObject, toNullPrototypeJson } from './utils/json.js';
+import { emptyRecord, isRecord, recordFromMap } from './utils/record.js';
 import type {
   JsonValue,
   WebhookConfig,
@@ -302,7 +304,7 @@ function mergeBody(
   if (isJsonObject(base.body) && isJsonObject(partial.body)) {
     const values = new Map<string, JsonValue>(Object.entries(base.body));
     for (const entry of Object.entries(partial.body)) values.set(...entry);
-    return jsonObjectFromMap(values);
+    return recordFromMap(values);
   }
   return partial.body === undefined ? undefined : cloneJson(partial.body);
 }
@@ -334,53 +336,9 @@ function normalizeJsonBody(input: unknown): JsonValue {
   }
 }
 
-function cloneJson(input: JsonValue): JsonValue {
-  if (Array.isArray(input)) return input.map(cloneJson);
-  if (isJsonObject(input)) {
-    return jsonObjectFromMap(
-      new Map(Object.entries(input).map(([key, value]) => [key, cloneJson(value)]))
-    );
-  }
-  return input;
-}
-
-function toNullPrototypeJson(input: JsonValue): JsonValue {
-  if (Array.isArray(input)) return input.map(toNullPrototypeJson);
-  if (isJsonObject(input)) {
-    return jsonObjectFromMap(
-      new Map(Object.entries(input).map(([key, value]) => [key, toNullPrototypeJson(value)]))
-    );
-  }
-  return input;
-}
-
-function isJsonObject(input: unknown): input is { readonly [key: string]: JsonValue } {
-  return isRecord(input);
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return typeof input === 'object' && input !== null && !Array.isArray(input);
-}
-
 function assertAllowedFields(
   input: Readonly<Record<string, unknown>>,
   allowed: ReadonlySet<string>
 ): void {
   if (Object.keys(input).some((key) => !allowed.has(key))) throw invalidConfig();
-}
-
-function emptyRecord(): Readonly<Record<string, string>> {
-  return Object.create(null) as Record<string, string>;
-}
-
-function recordFromMap(values: ReadonlyMap<string, string>): Readonly<Record<string, string>> {
-  return Object.assign(Object.create(null) as Record<string, string>, Object.fromEntries(values));
-}
-
-function jsonObjectFromMap(values: ReadonlyMap<string, JsonValue>): {
-  readonly [key: string]: JsonValue;
-} {
-  const result = Object.create(null) as Record<string, JsonValue>;
-  for (const [key, value] of values) result[key] = value;
-  return result;
 }

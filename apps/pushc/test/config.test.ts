@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { findConfigPath, loadConfig, normalizeConfigPath, parsePushConfig } from '../src/config.js';
+import { redactForOutput } from '../src/utils/redact.js';
 
 const directories: string[] = [];
 
@@ -81,7 +82,11 @@ describe('config', () => {
     await writeFile(configPath, '[adapters]\n');
 
     await expect(
-      findConfigPath({ env: { XDG_CONFIG_HOME: join(root, 'missing') }, homeDir: root })
+      findConfigPath({
+        env: { XDG_CONFIG_HOME: join(root, 'missing') },
+        homeDir: root,
+        cwd: root
+      })
     ).resolves.toBe(configPath);
   });
 
@@ -96,6 +101,10 @@ describe('config', () => {
     const env: NodeJS.ProcessEnv = {};
 
     const loaded = await loadConfig({ path: configPath, env });
+    expect(loaded.redactions).toEqual([
+      'https%3A%2F%2Fexample.com%2Ffrom-dotenv',
+      'https://example.com/from-dotenv'
+    ]);
     expect(loaded.config).toMatchInlineSnapshot(`
       {
         "adapters": {
@@ -151,6 +160,7 @@ describe('config', () => {
     await writeFile(configPath, '[adapters.ops]\ntype = "webhook"\nurl = "${TOKEN}"\n');
 
     const loaded = await loadConfig({ path: configPath, env: { TOKEN: 'from-process' } });
+    expect(loaded.redactions).toEqual(['from-process']);
     expect(loaded.config).toMatchInlineSnapshot(`
       {
         "adapters": {
@@ -166,6 +176,51 @@ describe('config', () => {
     await expect(loadConfig({ path: configPath, env: {} })).rejects.toMatchObject({
       code: 'ENV_MISSING',
       message: 'Environment variable MISSING_SECRET is required by the config.'
+    });
+  });
+
+  it('tracks encoded and URL-normalized forms of referenced environment values', async () => {
+    const root = await tempDirectory();
+    const configPath = join(root, 'config.toml');
+    await writeFile(
+      configPath,
+      '[adapters.ops]\ntype = "webhook"\nurl = "https://example.com/${TOKEN}"\n[adapters.ops.request.headers]\nAuthorization = "${HEADER_TOKEN}"\n'
+    );
+
+    const loaded = await loadConfig({
+      path: configPath,
+      env: { TOKEN: 'token with space', HEADER_TOKEN: '  header-secret\t' }
+    });
+
+    expect(loaded.redactions).toEqual(
+      expect.arrayContaining([
+        'token with space',
+        'token%20with%20space',
+        'https://example.com/token%20with%20space',
+        'header-secret'
+      ])
+    );
+    expect(redactForOutput('https://example.com/token%20with%20space', loaded.redactions)).toBe(
+      '[REDACTED]'
+    );
+  });
+
+  it('redacts referenced environment values normalized to numbers', () => {
+    expect(
+      redactForOutput(
+        {
+          receipt: {
+            request: { params: { user_id: 123456 } },
+            response: { status: 204 }
+          }
+        },
+        ['123456']
+      )
+    ).toEqual({
+      receipt: {
+        request: { params: { user_id: '[REDACTED]' } },
+        response: { status: 204 }
+      }
     });
   });
 

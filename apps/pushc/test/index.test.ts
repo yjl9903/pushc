@@ -13,7 +13,7 @@ describe('public API', () => {
         "findConfigPath",
         "formatDestination",
         "isDestinationName",
-        "makePushClient",
+        "makePushRuntime",
         "normalizeConfigPath",
         "normalizeDestination",
         "parsePushConfig",

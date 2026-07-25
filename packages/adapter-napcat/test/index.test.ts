@@ -16,11 +16,21 @@ function mockClient(): NapCatClient {
 
 describe('napcat adapter', () => {
   it.each([
-    ['user', { user_id: '123456' }, { user_id: 123456 }],
-    ['group', { group_id: '123456' }, { group_id: 123456 }]
+    [
+      'user',
+      { user_id: '123456' },
+      { user_id: 123456 },
+      'NapCat sent a message to user 123456 (message ID: 42).'
+    ],
+    [
+      'group',
+      { group_id: '123456' },
+      { group_id: 123456 },
+      'NapCat sent a message to group 123456 (message ID: 42).'
+    ]
   ] as const)(
     'reuses one connection config to send a %s target',
-    async (_targetType, targetConfig, recipient) => {
+    async (_targetType, targetConfig, recipient, summary) => {
       const client = mockClient();
       const factory = vi.fn(() => client);
       const adapter = new NapCatAdapter(
@@ -29,11 +39,20 @@ describe('napcat adapter', () => {
       );
       await expect(
         adapter.send(targetConfig, { message: 'hello', title: 'ignored', param: { x: 'ignored' } })
-      ).resolves.toMatchInlineSnapshot(`
-        {
-          "messageId": "42",
+      ).resolves.toEqual({
+        success: true,
+        receipt: {
+          summary,
+          request: {
+            method: 'send_msg',
+            params: {
+              ...recipient,
+              message: [{ type: 'text', data: { text: 'hello' } }]
+            }
+          },
+          response: { messageId: '42' }
         }
-      `);
+      });
       expect(client.connect).toHaveBeenCalledOnce();
       expect(client.send_msg).toHaveBeenCalledWith({
         ...recipient,
@@ -88,19 +107,40 @@ describe('napcat adapter', () => {
     `);
   });
 
-  it('keeps the shared connection when sending fails', async () => {
+  it('keeps the shared connection and normalizes SDK failure objects', async () => {
     const client = mockClient();
+    const failures: unknown[] = [
+      {
+        status: 'failed',
+        retcode: 1200,
+        data: null,
+        message: 'permission denied',
+        echo: 'first'
+      },
+      {
+        status: 'failed',
+        retcode: -1,
+        data: null,
+        echo: 'second'
+      }
+    ];
     client.send_msg = vi.fn(async () => {
-      throw new Error('offline');
+      throw failures.shift();
     });
     const adapter = new NapCatAdapter(
       { base_url: 'ws://localhost:3001' },
       { factory: () => client }
     );
 
-    await expect(adapter.send({ group_id: '123' }, { message: 'hello' })).rejects.toThrow(
-      'offline'
-    );
+    await expect(adapter.send({ group_id: '123' }, { message: 'hello' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'permission denied' }
+    });
+    await expect(adapter.send({ group_id: '123' }, { message: 'again' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'NapCat failed to deliver the message.' }
+    });
+    expect(client.connect).toHaveBeenCalledOnce();
     expect(client.disconnect).not.toHaveBeenCalled();
     await adapter.destroy();
     expect(client.disconnect).toHaveBeenCalledOnce();
@@ -128,8 +168,9 @@ describe('napcat adapter', () => {
       { factory: () => client }
     );
 
-    await expect(adapter.send({ user_id: '123' }, { message: 'hello' })).rejects.toMatchObject({
-      code: 'ABORTED'
+    await expect(adapter.send({ user_id: '123' }, { message: 'hello' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: expect.stringContaining('timed out') }
     });
     expect(client.disconnect).not.toHaveBeenCalled();
     await adapter.destroy();
@@ -153,8 +194,9 @@ describe('napcat adapter', () => {
 
     await Promise.all([adapter.destroy(), adapter.destroy()]);
     expect(client.disconnect).toHaveBeenCalledOnce();
-    await expect(adapter.send(target, { message: 'after destroy' })).rejects.toMatchObject({
-      code: 'ABORTED'
+    await expect(adapter.send(target, { message: 'after destroy' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: expect.stringContaining('aborted') }
     });
   });
 
@@ -195,12 +237,14 @@ describe('napcat adapter', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
     const target = { group_id: '123' };
 
-    await expect(adapter.send(target, { message: 'first' })).rejects.toThrow('connect failed');
-    await expect(adapter.send(target, { message: 'second' })).resolves.toMatchInlineSnapshot(`
-      {
-        "messageId": "42",
-      }
-    `);
+    await expect(adapter.send(target, { message: 'first' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'connect failed' }
+    });
+    await expect(adapter.send(target, { message: 'second' })).resolves.toMatchObject({
+      success: true,
+      receipt: { response: { messageId: '42' } }
+    });
 
     expect(factory).toHaveBeenCalledTimes(2);
     expect(failedClient.disconnect).toHaveBeenCalledOnce();
