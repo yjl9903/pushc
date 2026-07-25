@@ -12,7 +12,21 @@
     "strictNullChecks": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "skipDefaultLibCheck": true
+    "skipDefaultLibCheck": true,
+    "paths": {
+      "@pushc/adapter-napcat": [
+        "./packages/adapter-napcat/src"
+      ],
+      "@pushc/adapter-webhook": [
+        "./packages/adapter-webhook/src"
+      ],
+      "@pushc/core": [
+        "./packages/core/src"
+      ],
+      "pushc": [
+        "./apps/pushc/src"
+      ]
+    },
   },
   "exclude": [
     "node_modules"

@@ -42,6 +42,8 @@ targets；target 是 adapter-specific partial config。系统当前支持通用 
 
 - 新平台集成应作为独立 `packages/adapter-*` workspace，直接导出继承 `PushAdapter` 的 class；官方组合层按配置 type 调用其 constructor。
 - 公共库保持 ESM、强类型且可独立测试；网络与平台边界必须可注入或 mock。
+- workspace 内的 TypeScript 包名解析由根 `tsconfig.json` 直接指向各自 `src`；`package.json`
+  中的 `dist` 入口只用于构建产物和发布。
 - target 列表、日志和错误不得泄露 token、Webhook URL 等 adapter 私密配置。
 - `dist/` 是构建产物，不作为设计或实现来源。
 - 综合评估改动量与影响范围较大的需求，才在 `docs/plan/` 记录背景、目标、关键设计决策和技术方案；同一上下文优先复用已有 plan。plan 不能代替本目录的现状描述。

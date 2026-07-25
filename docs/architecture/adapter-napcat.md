@@ -8,11 +8,10 @@
 
 | 文件               | 职责                                                       |
 | ------------------ | ---------------------------------------------------------- |
-| `src/adapter.ts`   | 组合配置、target、连接与发送操作，实现 core adapter 契约。 |
+| `src/adapter.ts`   | 组合配置、target、连接、取消与发送操作，实现 core adapter 契约。 |
 | `src/config.ts`    | 解析 WebSocket、token 与 timeout 连接配置。                |
 | `src/target.ts`    | 解析 target partial，并校验私聊或群聊 ID。                 |
 | `src/client.ts`    | 封装 SDK client 创建、惰性连接、复用、失败恢复与销毁。     |
-| `src/operation.ts` | 管理单次连接/发送操作的取消、超时和 Promise 竞争。         |
 | `src/error.ts`     | NapCat 错误码和错误类型。                                  |
 | `src/types.ts`     | 公共配置、target、receipt、client 与注入类型。             |
 | `src/index.ts`     | 公共 API 导出。                                            |
@@ -48,7 +47,8 @@ ID 在调用 SDK 前转换为 number，因此不支持超出安全整数范围�
 
 NapCatAdapter 惰性维护单个 WebSocket client：constructor 与 `initialize` 不连接，第一次 `send` 调用 `factory` 并建立连接；并发的首次发送共享同一连接 Promise，后续发送复用已连接 client，直到 `destroy` 断开并终止 adapter。
 
-1. 创建覆盖 lazy connect 和 send 的操作级 timeout，并监听调用方 signal 与 adapter destroy signal。
+1. 使用原生 `AbortSignal.timeout()` 创建覆盖 lazy connect 和 send 的操作级 timeout，并通过
+   `AbortSignal.any()` 与调用方 signal、adapter destroy signal 组合。
 2. 获取或惰性建立共享 WebSocket 连接。
 3. target 的 `user_id` 或 `group_id` 直接传给 SDK；payload 的 `message` 固定转换为一个
    NapCat text segment，本轮不支持的 `title` 与 `param` 被明确忽略。
@@ -58,7 +58,8 @@ NapCatAdapter 惰性维护单个 WebSocket client：constructor 与 `initialize`
    ID。连接、发送、超时和取消返回失败 outcome 与同一 request receipt；标准 Error 或 NapCat
    SDK failure object 的非空 string `message` 被保留，其他异常使用稳定回退描述。
    success/error 不写入 receipt。
-6. 清理本次 signal/timeout；连接保留给后续发送。
+6. Promise 竞争结束后释放取消监听；原生组合 signal 管理父 signal 与 timeout，连接保留给
+   后续发送。
 
 `destroy` 幂等地取消进行中的等待并断开共享 client；断开连接失败由 lifecycle 调用方处理。连接建立失败会清除缓存，使后续发送可以重试。
 
@@ -69,4 +70,5 @@ NapCatAdapter 惰性维护单个 WebSocket client：constructor 与 `initialize`
 
 Vitest 通过注入 mock client 覆盖 target 默认字段、partial 继承、连接字段拒绝、同一账号的
 私聊/群聊参数映射、连接参数、receipt、SDK failure object、稳定错误回退、失败清理、配置
-校验和超时取消。测试不得依赖真实 NapCat 服务。tsdown 以 Node 平台输出 ESM 与类型声明。
+校验、调用方取消和超时取消。测试不得依赖真实 NapCat 服务。tsdown 以 Node 平台输出 ESM
+与类型声明。

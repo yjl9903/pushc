@@ -177,6 +177,30 @@ describe('napcat adapter', () => {
     expect(client.disconnect).toHaveBeenCalledOnce();
   });
 
+  it('stops waiting when the caller aborts an operation', async () => {
+    const client = mockClient();
+    client.connect = vi.fn(() => new Promise<void>(() => undefined));
+    const adapter = new NapCatAdapter(
+      { base_url: 'ws://localhost:3001' },
+      { factory: () => client }
+    );
+    const controller = new AbortController();
+
+    const sending = adapter.send(
+      { user_id: '123' },
+      { message: 'hello' },
+      { signal: controller.signal }
+    );
+    controller.abort(new Error('cancelled by caller'));
+
+    await expect(sending).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SEND_FAILED', message: 'NapCat operation was aborted.' }
+    });
+    await adapter.destroy();
+    expect(client.disconnect).toHaveBeenCalledOnce();
+  });
+
   it('lazily creates one connection and reuses it across sends', async () => {
     const client = mockClient();
     const factory = vi.fn(() => client);

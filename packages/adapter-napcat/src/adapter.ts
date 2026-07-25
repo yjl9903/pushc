@@ -1,3 +1,4 @@
+import { addAbortListener } from 'node:events';
 import {
   PushAdapter,
   type PushAdapterSendResult,
@@ -16,7 +17,6 @@ import type {
 
 import { NapCatConnection } from './client.js';
 import { parseNapCatConfig } from './config.js';
-import { createOperationSignal, raceWithSignal } from './operation.js';
 import { napCatTargetDefaults, parseNapCatTarget, parseNapCatTargetPartial } from './target.js';
 
 export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig, NapCatReceipt> {
@@ -51,26 +51,27 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
       method: 'send_msg',
       params
     };
-    const operation = createOperationSignal(
-      [options.signal, this.#connection.destroySignal],
-      this.config.timeout_ms
-    );
+
+    const timeoutSignal = AbortSignal.timeout(this.config.timeout_ms);
+    const operationSignal = AbortSignal.any([
+      ...(options.signal ? [options.signal] : []),
+      this.#connection.destroySignal,
+      timeoutSignal
+    ]);
+    const aborted = Promise.withResolvers<never>();
+    const abortOperation = () => aborted.reject(operationSignal.reason);
+    using abortSubscription = addAbortListener(operationSignal, abortOperation);
+    if (operationSignal.aborted) abortOperation();
+
     try {
-      const client = await raceWithSignal(
-        this.#connection.connect(),
-        operation.signal,
-        this.config.timeout_ms
-      );
-      const response = await raceWithSignal(
-        client.send_msg(request.params),
-        operation.signal,
-        this.config.timeout_ms
-      );
+      const client = await Promise.race([aborted.promise, this.#connection.connect()]);
+      const response = await Promise.race([aborted.promise, client.send_msg(request.params)]);
       const messageId = String(response.message_id);
       const recipient =
         'user_id' in request.params
           ? `user ${request.params.user_id}`
           : `group ${request.params.group_id}`;
+
       return {
         success: true,
         receipt: {
@@ -85,11 +86,14 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
         receipt: { request },
         error: {
           code: 'SEND_FAILED',
-          message: napCatFailureMessage(error)
+          message:
+            timeoutSignal.aborted && error === timeoutSignal.reason
+              ? `NapCat operation timed out after ${this.config.timeout_ms}ms.`
+              : operationSignal.aborted && error === operationSignal.reason
+                ? 'NapCat operation was aborted.'
+                : napCatFailureMessage(error)
         }
       };
-    } finally {
-      operation.cleanup();
     }
   }
 

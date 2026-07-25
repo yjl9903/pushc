@@ -6,7 +6,9 @@ export default defineConfig({
     cli: 'src/cli.ts'
   },
   format: ['esm'],
-  dts: true,
+  dts: {
+    tsconfig: '../../tsconfig.json'
+  },
   clean: true,
   outDir: 'dist',
   platform: 'node'
