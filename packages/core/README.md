@@ -47,4 +47,4 @@ await client.destroy();
 
 ## License
 
-MIT License © 2026 [XLor](https://github.com/yjl9903)
+MIT License © 2026 [OneKuma](https://github.com/yjl9903)

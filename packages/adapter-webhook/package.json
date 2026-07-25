@@ -15,7 +15,7 @@
     "directory": "packages/adapter-webhook"
   },
   "license": "MIT",
-  "author": "XLor",
+  "author": "OneKuma",
   "sideEffects": false,
   "type": "module",
   "exports": {

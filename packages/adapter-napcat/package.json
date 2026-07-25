@@ -16,7 +16,7 @@
     "directory": "packages/adapter-napcat"
   },
   "license": "MIT",
-  "author": "XLor",
+  "author": "OneKuma",
   "sideEffects": false,
   "type": "module",
   "exports": {

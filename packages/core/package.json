@@ -14,7 +14,7 @@
     "directory": "packages/core"
   },
   "license": "MIT",
-  "author": "XLor",
+  "author": "OneKuma",
   "sideEffects": false,
   "type": "module",
   "exports": {
