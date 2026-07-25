@@ -19,6 +19,7 @@ interface PushPayload {
 
 interface PushSendOptions {
   readonly signal?: AbortSignal;
+  readonly dryRun?: boolean;
 }
 
 type PushTargetInput = string | Readonly<Record<string, unknown>>;
@@ -37,25 +38,28 @@ param 保持 `undefined`。payload 错误为 `INVALID_MESSAGE`。
 
 options 为 strict object。signal 使用 runtime-neutral shape guard 校验 `aborted`、
 `addEventListener` 和 `removeEventListener`，保持原 identity；options 错误为
-`INVALID_SEND_OPTIONS`。payload/options 校验后立即检查预取消 signal，失败为
-`SEND_FAILED`，且不得继续解析 target。
+`INVALID_SEND_OPTIONS`。`dryRun` 为可选 boolean；为 `true` 时只准备最终 request，不执行平台
+传输。payload/options 校验后立即检查预取消 signal，失败为 `SEND_FAILED`，且不得继续解析
+target。
 
 ## Adapter 与 Target 契约
 
 `PushAdapter<TConfig, TTarget, TReceipt>` 保存只读 `config` 与 `targets`。base class 的公共
-`send(target, payload, options?)` 完成公共 input normalization，然后调用：
+`send` 完成公共 input normalization，并通过同步、无副作用的方法构造 request：
 
 ```ts
-protected abstract sendTarget(
-  target: TTarget,
-  payload: PushPayload,
+protected abstract prepareRequest(target: TTarget, payload: PushPayload): TReceipt['request'];
+
+protected abstract sendRequest(
+  request: TReceipt['request'],
   options: Readonly<PushSendOptions>
 ): Promise<PushAdapterSendResult<TReceipt>>;
 ```
 
-三个参数分别是 resolved `target`、normalized `payload` 和 normalized `options`，与公共
-send 的语义顺序一致。concrete adapter 实现 `parseTarget(input)`，负责 adapter default、
-partial merge 和 adapter-specific 校验。
+`prepareRequest` 接收 resolved target 与 normalized payload，不连接或访问平台；
+`sendRequest` 只传输已构造 request。`options.dryRun === true` 时，base class 在
+`prepareRequest` 后直接返回只含 request 的 receipt，不调用 `sendRequest`。concrete adapter 实现
+`parseTarget(input)`，负责 adapter default、partial merge 和 adapter-specific 校验。
 
 `PushTargets<TTarget>` 不从 resolved target 类型推导 input 类型。`register(name, input)`
 只接受普通 readonly Record，交给 adapter `parseTarget` 后保存 resolved target。省略 target
@@ -76,6 +80,11 @@ hook，失败归一化为 `DESTROY_FAILED`。
 client 按 success/failure 分支显式构造结果，只复制协议规定的字段，再合并逐步解析出的
 adapter 和具名 string target；outcome 的其他顶层字段不进入 PushResult。所有预期发送错误均
 返回失败 result。
+`PushClient.send(..., { dryRun: true })` 使用相同的 destination、adapter、target 与 payload
+边界，返回固定带 `dryRun: true` 的 `PushDryRunResult`。成功包含
+`{ dryRun: true, success: true, adapter, target?, receipt: { request } }`，失败包含
+`{ dryRun: true, success: false, adapter?, target?, receipt?, error }`。dry-run 与正常 send
+共用 receipt 层级，但不会产生 `response` 或 `summary`。
 adapter name 和 target name 统称 destination name，使用同一套格式规则；
 `formatDestination(adapter, target?)` 由 core 统一把 destination 格式化为
 `adapter[:target]`。destination 的名称校验、输入归一化和格式化聚合在
@@ -89,5 +98,5 @@ adapter，并禁止后续发送。
 ## 测试边界
 
 core 测试覆盖 payload/destination/options strict runtime 校验、default/具名/临时 target、
-string/object destination、signal identity 与预取消顺序、registry lifecycle、错误归一化和
-result target 规则。构建输出保持 runtime-neutral ESM 与类型声明。
+string/object destination、dry-run 无传输边界、signal identity 与预取消顺序、registry
+lifecycle、错误归一化和 result target 规则。构建输出保持 runtime-neutral ESM 与类型声明。

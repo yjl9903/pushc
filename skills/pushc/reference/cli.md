@@ -48,9 +48,9 @@ text rather than JSON.
 pushc targets [--config <path>] [--json]
 ```
 
-Load and validate the configuration, initialize adapters, and list configured destinations
-in lexical order. An adapter with named targets produces one entry per target. An adapter without
-named targets produces its default destination, even though no named target is registered.
+Load and validate the configuration, construct adapters, and list configured destinations in lexical
+order. An adapter with named targets produces one entry per target. An adapter without named targets
+produces its default destination, even though no named target is registered.
 
 Text output:
 
@@ -79,9 +79,9 @@ options, target options, URLs, or tokens.
 ## `send`
 
 ```bash
-pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] [...content]
-pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] --file <path>
-<producer> | pushc send --target <adapter[:target]>
+pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] [--dry-run] [...content]
+pushc send --target <adapter[:target]> [--title <title>] [--param key=value ...] [--dry-run] --file <path>
+<producer> | pushc send --target <adapter[:target]> [--dry-run]
 ```
 
 `--target` is required. Adapter and target names must start with a letter or digit and contain only
@@ -98,13 +98,17 @@ Message source precedence and validation:
    fails.
 
 Positional content and `--file` are mutually exclusive. File and stdin content are not trimmed
-before delivery, but every source must contain at least one non-whitespace character.
+before sending, but every source must contain at least one non-whitespace character.
 
 `--title` supplies the optional public title field. `--param` may be repeated and supplies a flat
 string map. Each entry is split at its first `=`; an empty value is valid, additional `=` characters
 belong to the value, and key/value are not trimmed. Keys match
 `[A-Za-z0-9][A-Za-z0-9_.-]*` and are case-sensitive. Missing `=`, invalid/empty keys, and duplicate
 keys fail with `CLI_USAGE`. These options are not credential channels.
+
+`--dry-run` performs the same configuration, destination, target, payload, and final send validation
+as a real send, then returns the prepared send without performing it. A successful dry-run means the
+send is ready, not completed; pushc does not contact the destination.
 
 Text success examples:
 
@@ -131,6 +135,38 @@ Text details come from the unified receipt summary. JSON preserves the complete 
       "timeout_ms": 10000
     },
     "response": { "status": 204, "headers": {} }
+  }
+}
+```
+
+Dry-run text output includes the prepared request:
+
+```text
+Dry run ready: deploy:release
+Request:
+{
+  "url": "[REDACTED]",
+  "method": "POST",
+  "headers": {},
+  "timeout_ms": 10000
+}
+```
+
+Dry-run JSON sets `dryRun: true`; its receipt contains `request` but no platform `response`:
+
+```json
+{
+  "dryRun": true,
+  "success": true,
+  "adapter": "deploy",
+  "target": "release",
+  "receipt": {
+    "request": {
+      "url": "[REDACTED]",
+      "method": "POST",
+      "headers": {},
+      "timeout_ms": 10000
+    }
   }
 }
 ```
@@ -181,6 +217,13 @@ Error: Webhook returned HTTP 503.
 }
 ```
 
+Dry-run failures use the same error codes and preserve a prepared request when one is available:
+
+```text
+Dry run failed: deploy:release
+Error: Invalid webhook configuration.
+```
+
 Exit statuses:
 
 - `0`: command completed successfully.
@@ -191,13 +234,13 @@ Exit statuses:
 Common codes include `CLI_USAGE`, `CONFIG_NOT_FOUND`, `CONFIG_READ_FAILED`, `CONFIG_INVALID`,
 `ENV_MISSING`, `INVALID_CONFIG`, `UNKNOWN_ADAPTER`, `INVALID_TARGET`, `ADAPTER_NOT_FOUND`,
 `TARGET_NOT_FOUND`, `MESSAGE_SOURCE_CONFLICT`, `MESSAGE_FILE_FAILED`, `MESSAGE_EMPTY`, and
-`SEND_FAILED`. Adapter-specific delivery failures can be surfaced through `SEND_FAILED` messages.
+`SEND_FAILED`. Adapter-specific send failures can be surfaced through `SEND_FAILED` messages.
 
 ## Operational behavior
 
-Both commands destroy initialized clients and close persistent connections before exiting. Current
-adapters initialize without issuing a platform request; NapCat connects lazily on its first send,
-and Webhook only issues its configured HTTP request during send.
+Both commands destroy clients and close resources acquired during sending before exiting. A real
+send acquires destination resources lazily. Dry-run prepares the send without contacting the
+destination.
 
 Do not automatically retry sends. A transport failure can be ambiguous, and retrying may duplicate a
 notification.

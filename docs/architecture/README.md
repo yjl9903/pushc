@@ -22,7 +22,7 @@ targets；target 是 adapter-specific partial config。系统当前支持通用 
 - [`packages/adapter-webhook`](./adapter-webhook.md)：基于标准 `fetch` 的运行时无关 adapter，
   支持完整 target 请求覆盖、JSON/文本 serializer、payload 模板、请求头和超时。
 - [`packages/adapter-napcat`](./adapter-napcat.md)：Node.js adapter，管理 NapCat WebSocket 连接、私聊/群聊收件人、超时和发送回执。
-- [`apps/pushc`](./pushc-cli.md)：Node.js CLI 与官方组合层；负责配置路径发现与标准化、异步初始化、TOML 与环境变量、具体 adapter class 构造、消息输入、命令输出和退出码。
+- [`apps/pushc`](./pushc-cli.md)：Node.js CLI 与官方组合层；负责配置路径发现与标准化、异步配置加载、TOML 与环境变量、具体 adapter class 构造、消息输入、命令输出和退出码。
 
 依赖方向必须保持为 `apps/pushc -> adapters -> core`。`core` 不得依赖 adapter、Node API、TOML 解析器或平台 SDK。adapter 不负责配置文件发现或 CLI 展示。
 
@@ -34,9 +34,11 @@ targets；target 是 adapter-specific partial config。系统当前支持通用 
 4. CLI 从参数、文件或 stdin 读取消息，组合 `--title`/`--param` payload，并把
    `--target <adapter[:target]>` string 交给 client。
 5. client 解析 destination 并取得 adapter；adapter 校验 payload/options，将省略的 target、
-   具名字符串或临时对象解析为具体 target，执行平台发送并返回包含 receipt/error 的 outcome。
-6. core 将 destination 上下文与 adapter outcome 合并为统一 `PushResult`；CLI 将成功结果写入
-   stdout，将结构化错误写入 stderr，并映射退出码。
+   具名字符串或临时对象解析为具体 target，并构造最终 request。
+6. 正常 send 传输 request 并返回包含 receipt/error 的 outcome；dry-run 跳过 `sendRequest`
+   和平台传输，直接返回固定带 `dryRun: true`、receipt 只含 request 的结果。
+7. core 将 destination 上下文与 adapter outcome 合并为统一结果；CLI 将成功结果写入 stdout，
+   将结构化错误写入 stderr，并映射退出码。
 
 ## 架构约束
 

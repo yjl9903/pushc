@@ -43,20 +43,24 @@ export class WebhookAdapter extends PushAdapter<
     }
   }
 
-  protected async sendTarget(
+  protected prepareRequest(
     target: WebhookTargetConfig,
-    payload: PushPayload,
-    options: Readonly<PushSendOptions>
-  ): Promise<PushAdapterSendResult<WebhookReceipt>> {
-    let request;
+    payload: PushPayload
+  ): WebhookReceipt['request'] {
     try {
-      request = buildWebhookRequest(target.request, this.#origin, payload);
+      return buildWebhookRequest(target.request, this.#origin, payload);
     } catch (error) {
       if (error instanceof WebhookError && error.code === 'INVALID_CONFIG') {
         throw new PushError('INVALID_CONFIG', error.message, { cause: error });
       }
       throw error;
     }
+  }
+
+  protected async sendRequest(
+    request: WebhookReceipt['request'],
+    options: Readonly<PushSendOptions>
+  ): Promise<PushAdapterSendResult<WebhookReceipt>> {
     return await sendWebhook(this.#fetch, request, options);
   }
 }

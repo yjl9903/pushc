@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { breadc } from 'breadc';
-import { formatDestination, PushError } from '@pushc/core';
+import { formatDestination, PushError, type PushDryRunResult, type PushResult } from '@pushc/core';
 
 import packageJson from '../package.json' with { type: 'json' };
 
@@ -25,13 +25,15 @@ const cli = breadc('pushc', {
 
 cli
   .command('send [...content]', 'Send a message to a configured target')
-  .option('--target <destination>', 'Select a destination as adapter[:target]')
-  .option('--title <title>', 'Set an optional message title')
-  .option('--param [...entry]', 'Set string payload parameters as key=value')
+  .option('-t, --target <destination>', 'Select a destination as adapter[:target]')
   .option('-f, --file <path>', 'Read message content from a UTF-8 file')
+  .option('--title <title>', 'Set an optional message title')
+  .option('-p, --param [...entry]', 'Set string payload parameters as key=value')
+  .option('--dry-run', 'Prepare the final request without sending')
   .action(async (content, options, ctx) => {
     let destination: string;
     let param: ReturnType<typeof parseParamEntries>;
+
     try {
       if (typeof options.target !== 'string') {
         throw new PushError('INVALID_TARGET', 'The --target option is required.');
@@ -50,32 +52,42 @@ cli
     }
 
     try {
-      let result;
+      let result: PushResult | PushDryRunResult;
       try {
         const message = await resolveMessage({
           content,
           ...(options.file ? { file: options.file } : {})
         });
-        result = await runtime.client.send(destination, {
+        const payload = {
           message,
           ...(options.title === undefined ? {} : { title: options.title }),
           ...(param === undefined ? {} : { param })
-        });
+        };
+        result = options.dryRun
+          ? await runtime.client.send(destination, payload, { dryRun: true })
+          : await runtime.client.send(destination, payload);
       } catch (error) {
         await runtime.client.destroy().catch(() => undefined);
         throw error;
       }
+
       try {
         await runtime.client.destroy();
       } catch (error) {
         if (result.success) {
-          result = {
-            success: false,
+          const failure = {
+            success: false as const,
             adapter: result.adapter,
             ...(result.target === undefined ? {} : { target: result.target }),
             receipt: result.receipt,
             error: normalizeError(error)
           };
+
+          if (options.dryRun) {
+            result = { dryRun: true, ...failure };
+          } else {
+            result = failure;
+          }
         }
       }
 

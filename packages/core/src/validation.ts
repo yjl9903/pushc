@@ -5,17 +5,7 @@ import type { PushPayload, PushSendOptions } from './types.js';
 
 const PARAM_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const PAYLOAD_FIELDS = new Set(['message', 'title', 'param']);
-const SEND_OPTION_FIELDS = new Set(['signal']);
-
-const signalSchema = z.custom<AbortSignal>(
-  (value) =>
-    typeof value === 'object' &&
-    value !== null &&
-    typeof Reflect.get(value, 'aborted') === 'boolean' &&
-    typeof Reflect.get(value, 'addEventListener') === 'function' &&
-    typeof Reflect.get(value, 'removeEventListener') === 'function',
-  'signal must be an AbortSignal-compatible object'
-);
+const SEND_OPTION_FIELDS = new Set(['signal', 'dryRun']);
 
 const paramSchema = z.record(z.string().regex(PARAM_KEY_PATTERN), z.string());
 const payloadSchema = z.strictObject({
@@ -23,10 +13,6 @@ const payloadSchema = z.strictObject({
   title: z.string().optional(),
   param: paramSchema.optional()
 });
-const optionsSchema = z.strictObject({
-  signal: signalSchema.optional()
-});
-
 export function normalizePayload(input: unknown): PushPayload {
   try {
     assertAllowedFields(input, PAYLOAD_FIELDS);
@@ -37,18 +23,21 @@ export function normalizePayload(input: unknown): PushPayload {
     ) {
       throw new PushError('INVALID_MESSAGE', 'Invalid push payload.');
     }
+
     const result = payloadSchema.safeParse(input);
     if (!result.success) {
       throw new PushError('INVALID_MESSAGE', 'Invalid push payload.', {
         cause: result.error
       });
     }
+
     const param =
       result.data.param === undefined
         ? undefined
         : Object.freeze(
             Object.assign(Object.create(null) as Record<string, string>, result.data.param)
           );
+
     return Object.freeze({
       message: result.data.message,
       ...(result.data.title === undefined ? {} : { title: result.data.title }),
@@ -62,19 +51,35 @@ export function normalizePayload(input: unknown): PushPayload {
 
 export function normalizeSendOptions(input: unknown): Readonly<PushSendOptions> {
   try {
-    const normalizedInput = input === undefined ? {} : input;
-    assertAllowedFields(normalizedInput, SEND_OPTION_FIELDS);
-    const result = optionsSchema.safeParse(normalizedInput);
-    if (!result.success) {
-      throw new PushError('INVALID_SEND_OPTIONS', 'Invalid send options.', {
-        cause: result.error
-      });
+    const options = input === undefined ? {} : input;
+    if (!isRecord(options)) throw new Error('Send options must be an object.');
+    assertAllowedFields(options, SEND_OPTION_FIELDS);
+
+    const signal = options.signal;
+    const dryRun = options.dryRun;
+    if (signal !== undefined && !isAbortSignal(signal)) {
+      throw new Error('signal must be an AbortSignal-compatible object.');
     }
-    return Object.freeze(result.data.signal === undefined ? {} : { signal: result.data.signal });
+    if (dryRun !== undefined && typeof dryRun !== 'boolean') {
+      throw new Error('dryRun must be a boolean.');
+    }
+
+    return Object.freeze({
+      ...(signal === undefined ? {} : { signal }),
+      ...(dryRun === undefined ? {} : { dryRun })
+    });
   } catch (cause) {
-    if (cause instanceof PushError) throw cause;
     throw new PushError('INVALID_SEND_OPTIONS', 'Invalid send options.', { cause });
   }
+}
+
+function isAbortSignal(input: unknown): input is AbortSignal {
+  return (
+    isRecord(input) &&
+    typeof Reflect.get(input, 'aborted') === 'boolean' &&
+    typeof Reflect.get(input, 'addEventListener') === 'function' &&
+    typeof Reflect.get(input, 'removeEventListener') === 'function'
+  );
 }
 
 function assertAllowedFields(input: unknown, allowed: ReadonlySet<string>): void {

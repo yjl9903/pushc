@@ -160,7 +160,7 @@ async function readResponse(response: Response): Promise<WebhookResponseReceipt>
       if (isJsonValue(parsed)) body = parsed;
     }
   } catch {
-    // Response parsing is best effort and does not change delivery success.
+    // Response parsing is best effort and does not change send success.
   }
   return {
     status: response.status,

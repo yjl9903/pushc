@@ -20,10 +20,16 @@ interface SentCall {
   readonly options: Readonly<PushSendOptions>;
 }
 
-type TestReceipt = PushReceipt<{ channel: string; message: string }, { id: string }>;
+interface TestRequest {
+  readonly channel: string;
+  readonly message: string;
+}
+
+type TestReceipt = PushReceipt<TestRequest, { id: string }>;
 
 class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestReceipt> {
   readonly contexts: SentCall[] = [];
+  readonly prepared = new WeakMap<TestRequest, Omit<SentCall, 'options'>>();
   readonly parse = vi.fn((input: unknown): TestTarget => {
     if (typeof input !== 'object' || input === null || Array.isArray(input)) {
       throw new Error('target must be an object');
@@ -33,8 +39,7 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestRece
     return { channel: `${this.config.prefix}${value.channel}` };
   });
   readonly sendImplementation?: (
-    target: TestTarget,
-    payload: PushPayload,
+    request: TestRequest,
     options: Readonly<PushSendOptions>
   ) => Promise<PushAdapterSendResult<TestReceipt>>;
   readonly destroyImplementation?: () => Promise<void>;
@@ -44,8 +49,7 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestRece
     readonly defaults: Readonly<Record<string, unknown>> = { channel: 'default' },
     options: {
       send?: (
-        target: TestTarget,
-        payload: PushPayload,
+        request: TestRequest,
         options: Readonly<PushSendOptions>
       ) => Promise<PushAdapterSendResult<TestReceipt>>;
       destroy?: () => Promise<void>;
@@ -60,18 +64,25 @@ class MemoryAdapter extends PushAdapter<{ prefix: string }, TestTarget, TestRece
     return this.parse(input);
   }
 
-  protected async sendTarget(
-    target: TestTarget,
-    payload: PushPayload,
+  protected prepareRequest(target: TestTarget, payload: PushPayload): TestRequest {
+    const request = { channel: target.channel, message: payload.message };
+    this.prepared.set(request, { target, payload });
+    return request;
+  }
+
+  protected async sendRequest(
+    request: TestRequest,
     options: Readonly<PushSendOptions>
   ): Promise<PushAdapterSendResult<TestReceipt>> {
-    this.contexts.push({ target, payload, options });
+    const prepared = this.prepared.get(request);
+    if (!prepared) throw new Error('request was not prepared');
+    this.contexts.push({ ...prepared, options });
     return (
-      (await this.sendImplementation?.(target, payload, options)) ?? {
+      (await this.sendImplementation?.(request, options)) ?? {
         success: true,
         receipt: {
-          request: { channel: target.channel, message: payload.message },
-          response: { id: `${target.channel}:${payload.message}` }
+          request,
+          response: { id: `${request.channel}:${request.message}` }
         }
       }
     );
@@ -272,7 +283,11 @@ describe('send boundaries', () => {
       removeEventListener: vi.fn()
     } as unknown as AbortSignal;
 
-    await adapter.send(undefined, { message: ' hello ', title: '', param }, { signal });
+    await adapter.send(
+      undefined,
+      { message: ' hello ', title: '', param },
+      { signal, dryRun: false }
+    );
 
     const context = adapter.contexts[0]!;
     expect(context.payload.message).toBe(' hello ');
@@ -286,6 +301,8 @@ describe('send boundaries', () => {
     expect(Object.getPrototypeOf(context.payload.param)).toBeNull();
     expect(Object.isFrozen(context.payload.param)).toBe(true);
     expect(context.options.signal).toBe(signal);
+    expect(context.options.dryRun).toBe(false);
+    expect(Object.isFrozen(context.options)).toBe(true);
   });
 
   it.each([
@@ -321,6 +338,9 @@ describe('send boundaries', () => {
     await expect(
       adapter.send(undefined, { message: 'ok' }, JSON.parse('{"__proto__":true}') as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
+    await expect(
+      adapter.send(undefined, { message: 'ok' }, { dryRun: 'true' } as never)
+    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
 
     const reason = new Error('cancelled');
     const signal = {
@@ -332,7 +352,7 @@ describe('send boundaries', () => {
     adapter.parse.mockClear();
     await expect(adapter.send(undefined, { message: 'ok' }, { signal })).resolves.toMatchObject({
       success: false,
-      error: { code: 'SEND_FAILED', message: 'Message delivery was aborted.' }
+      error: { code: 'SEND_FAILED', message: 'Message sending was aborted.' }
     });
     expect(adapter.parse).not.toHaveBeenCalled();
   });
@@ -483,6 +503,95 @@ describe('send boundaries', () => {
       error: {
         code: 'SEND_FAILED',
         message: 'offline'
+      }
+    });
+  });
+});
+
+describe('dry-run send boundaries', () => {
+  it('prepares default, named and temporary requests without sending', async () => {
+    const adapter = new MemoryAdapter();
+    adapter.targets.register('ops', { channel: 'ops' });
+
+    await expect(
+      adapter.send(undefined, { message: 'default' }, { dryRun: true })
+    ).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      receipt: { request: { channel: '#default', message: 'default' } }
+    });
+    await expect(adapter.send('ops', { message: 'named' }, { dryRun: true })).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      receipt: { request: { channel: '#ops', message: 'named' } }
+    });
+    await expect(
+      adapter.send({ channel: 'temporary' }, { message: 'preview' }, { dryRun: true })
+    ).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      receipt: { request: { channel: '#temporary', message: 'preview' } }
+    });
+    expect(adapter.contexts).toEqual([]);
+  });
+
+  it('adds destination context and preserves dry-run failures', async () => {
+    const client = createClient();
+    await expect(
+      client.send('memory:ops', { message: 'hello' }, { dryRun: true })
+    ).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      adapter: 'memory',
+      target: 'ops',
+      receipt: { request: { channel: '#ops', message: 'hello' } }
+    });
+    await expect(
+      client.send('memory:missing', { message: 'hello' }, { dryRun: true })
+    ).resolves.toEqual({
+      dryRun: true,
+      success: false,
+      adapter: 'memory',
+      target: 'missing',
+      error: {
+        code: 'TARGET_NOT_FOUND',
+        message: 'Target "missing" is not defined.'
+      }
+    });
+    await expect(
+      client.send('missing', { message: 'hello' }, { dryRun: true })
+    ).resolves.toMatchObject({
+      dryRun: true,
+      success: false,
+      adapter: 'missing',
+      error: { code: 'ADAPTER_NOT_FOUND' }
+    });
+    await expect(
+      client.send('bad.name', { message: 'hello' }, { dryRun: true })
+    ).resolves.toMatchObject({
+      dryRun: true,
+      success: false,
+      error: { code: 'INVALID_TARGET' }
+    });
+    await expect(
+      client.send('memory', { message: '   ' }, { dryRun: true })
+    ).resolves.toMatchObject({
+      dryRun: true,
+      success: false,
+      adapter: 'memory',
+      error: { code: 'INVALID_MESSAGE' }
+    });
+  });
+
+  it('rejects dry runs after client destruction', async () => {
+    const client = createClient();
+    await client.destroy();
+    await expect(client.send('memory', { message: 'hello' }, { dryRun: true })).resolves.toEqual({
+      dryRun: true,
+      success: false,
+      error: {
+        code: 'CLIENT_DESTROYED',
+        message: 'PushClient has been destroyed.'
       }
     });
   });

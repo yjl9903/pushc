@@ -5,6 +5,7 @@ export interface PushPayload {
 }
 
 export interface PushSendOptions {
+  readonly dryRun?: boolean;
   readonly signal?: AbortSignal;
 }
 
@@ -39,6 +40,11 @@ export type PushAdapterSendResult<TReceipt extends PushReceipt = PushReceipt> =
       readonly error: PushResultError;
     };
 
+export type PushAdapterDryRunResult<TReceipt extends PushReceipt = PushReceipt> =
+  PushAdapterSendResult<Pick<TReceipt, 'request'>> & {
+    readonly dryRun: true;
+  };
+
 export type PushResult<TReceipt extends PushReceipt = PushReceipt> =
   | {
       readonly success: true;
@@ -53,3 +59,9 @@ export type PushResult<TReceipt extends PushReceipt = PushReceipt> =
       readonly receipt?: TReceipt;
       readonly error: PushResultError;
     };
+
+export type PushDryRunResult<TReceipt extends PushReceipt = PushReceipt> = PushResult<
+  Pick<TReceipt, 'request' | 'summary'>
+> & {
+  readonly dryRun: true;
+};

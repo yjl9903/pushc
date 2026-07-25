@@ -58,8 +58,8 @@ scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非�
 
 ## Request 构造
 
-`sendTarget(target, payload, options)` 从 `target.request` 每次建立 request-local headers
-Map 与 JSON tree：
+`prepareRequest(target, payload)` 从 `target.request` 每次建立 request-local headers Map 与
+JSON tree：
 
 1. 渲染 request URL、header value 和 body string value。
 2. 校验最终绝对 HTTP(S) URL、credentials 与 adapter origin。
@@ -68,8 +68,13 @@ Map 与 JSON tree：
 5. body 不存在时省略 Fetch body，不自动生成或解析 Content-Type。
 6. 最终 header value 由 `new Headers([...map])` 校验。
 7. GET/HEAD 只允许 body 为 `undefined`。
-8. `WebhookRequest` 携带 resolved `timeout_ms`；请求构造完成后才由发送函数启动 timeout，
+8. `WebhookRequest` 携带 resolved `timeout_ms`；`sendRequest` 才启动 timeout，
    组合 parent signal 并调用 Fetch；所有出口清理 timer/listener。
+
+`send(..., { dryRun: true })` 只执行 `prepareRequest`，返回只含最终 request 的 receipt，不调用
+Fetch。
+正常 send 将同一 request 传给 `sendRequest`，因此 dry run 与 receipt request 不维护重复转换
+逻辑。
 
 Webhook 以 `response.ok`（HTTP 200–299）判断成功，不增加 retry。统一 receipt request
 记录最终 URL、method、经 `Headers` 规范化后的 headers、content type、timeout 和渲染后的
@@ -81,7 +86,7 @@ Fetch body 从同一值生成。response 记录 status、过滤常见鉴权字�
 ## 错误边界
 
 配置与 send-time request 构造错误使用 sanitized `WebhookError('INVALID_CONFIG')`，保留
-cause，不在 public message 中包含 URL、header 或 body。`parseTarget` 和 `sendTarget`
+cause，不在 public message 中包含 URL、header 或 body。`parseTarget` 和 `prepareRequest`
 分别将该错误映射为 `PushError('INVALID_CONFIG')`，确保 adapter、client 与 CLI 一致。
 transport、HTTP 和 abort 错误转换为统一失败 outcome，不做配置错误映射。
 
@@ -89,4 +94,4 @@ transport、HTTP 和 abort 错误转换为统一失败 outcome，不做配置错
 
 测试覆盖配置默认矩阵、target merge、特殊 key、JSON normalization、模板 scanner、URL
 origin、Content-Type/serializer、method/body、timeout/abort cleanup、并发请求隔离、错误映射、
-严格空 response 占位、response receipt 与 fetch unavailable。
+严格空 response 占位、dry run 无 Fetch、response receipt 与 fetch unavailable。

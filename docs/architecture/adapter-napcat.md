@@ -6,15 +6,15 @@
 
 ## 源码职责
 
-| 文件               | 职责                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `src/adapter.ts`   | 组合配置、target、连接、取消与发送操作，实现 core adapter 契约。 |
-| `src/config.ts`    | 解析 WebSocket、token 与 timeout 连接配置。                |
-| `src/target.ts`    | 解析 target partial，并校验私聊或群聊 ID。                 |
-| `src/client.ts`    | 封装 SDK client 创建、惰性连接、复用、失败恢复与销毁。     |
-| `src/error.ts`     | NapCat 错误码和错误类型。                                  |
-| `src/types.ts`     | 公共配置、target、receipt、client 与注入类型。             |
-| `src/index.ts`     | 公共 API 导出。                                            |
+| 文件             | 职责                                                             |
+| ---------------- | ---------------------------------------------------------------- |
+| `src/adapter.ts` | 组合配置、target、连接、取消与发送操作，实现 core adapter 契约。 |
+| `src/config.ts`  | 解析 WebSocket、token 与 timeout 连接配置。                      |
+| `src/target.ts`  | 解析 target partial，并校验私聊或群聊 ID。                       |
+| `src/client.ts`  | 封装 SDK client 创建、惰性连接、复用、失败恢复与销毁。           |
+| `src/error.ts`   | NapCat 错误码和错误类型。                                        |
+| `src/types.ts`   | 公共配置、target、receipt、client 与注入类型。                   |
+| `src/index.ts`   | 公共 API 导出。                                                  |
 
 ## Adapter 连接配置
 
@@ -43,9 +43,16 @@ adapter 顶层的 `user_id` 或 `group_id` 由 `NapCatAdapter` 私有保存为 t
 
 ID 在调用 SDK 前转换为 number，因此不支持超出安全整数范围的 QQ ID。
 
-## 单次发送生命周期
+## Request 准备与单次发送生命周期
 
-NapCatAdapter 惰性维护单个 WebSocket client：constructor 与 `initialize` 不连接，第一次 `send` 调用 `factory` 并建立连接；并发的首次发送共享同一连接 Promise，后续发送复用已连接 client，直到 `destroy` 断开并终止 adapter。
+NapCatAdapter 的 `prepareRequest` 将 target ID 转为 number，并把 payload message 转为单个
+NapCat text segment；`send(..., { dryRun: true })` 返回只含该 request 的 receipt，不调用
+factory 或建立连接。
+正常 send 把同一 `{ method: 'send_msg', params }` request 交给 `sendRequest`。
+
+adapter 惰性维护单个 WebSocket client：constructor 不连接，第一次真实 `send` 调用 `factory`
+并建立连接；并发的首次发送共享同一连接 Promise，后续发送复用已连接 client，直到
+`destroy` 断开并终止 adapter。
 
 1. 使用原生 `AbortSignal.timeout()` 创建覆盖 lazy connect 和 send 的操作级 timeout，并通过
    `AbortSignal.any()` 与调用方 signal、adapter destroy signal 组合。
@@ -69,6 +76,6 @@ NapCatAdapter 惰性维护单个 WebSocket client：constructor 与 `initialize`
 失败 outcome；连接和 target 配置错误由 adapter send 边界转换为 `INVALID_CONFIG` outcome。
 
 Vitest 通过注入 mock client 覆盖 target 默认字段、partial 继承、连接字段拒绝、同一账号的
-私聊/群聊参数映射、连接参数、receipt、SDK failure object、稳定错误回退、失败清理、配置
-校验、调用方取消和超时取消。测试不得依赖真实 NapCat 服务。tsdown 以 Node 平台输出 ESM
-与类型声明。
+私聊/群聊参数映射、dry run 无连接、连接参数、receipt、SDK failure object、稳定错误回退、
+失败清理、配置校验、调用方取消和超时取消。测试不得依赖真实 NapCat 服务。tsdown 以 Node
+平台输出 ESM 与类型声明。

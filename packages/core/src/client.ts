@@ -1,25 +1,49 @@
-import type { PushDestination, PushPayload, PushResult, PushSendOptions } from './types.js';
+import type {
+  PushDestination,
+  PushDryRunResult,
+  PushPayload,
+  PushResult,
+  PushSendOptions
+} from './types.js';
 
 import { PushError } from './error.js';
 import { PushAdapters } from './adapters.js';
 import { normalizeDestination } from './utils/destination.js';
 
 export class PushClient {
-  readonly adapters: PushAdapters;
+  public readonly adapters: PushAdapters;
+
   #destroyed = false;
   #destroyPromise?: Promise<void>;
 
-  constructor() {
+  public constructor() {
     this.adapters = new PushAdapters();
   }
 
-  async send(
+  public async send(
+    destination: PushDestination,
+    payload: PushPayload,
+    options: PushSendOptions & { readonly dryRun: true }
+  ): Promise<PushDryRunResult>;
+  public async send(
+    destination: PushDestination,
+    payload: PushPayload,
+    options?: PushSendOptions & { readonly dryRun?: false }
+  ): Promise<PushResult>;
+  public async send(
     destination: PushDestination,
     payload: PushPayload,
     options?: PushSendOptions
-  ): Promise<PushResult> {
+  ): Promise<PushResult | PushDryRunResult>;
+  public async send(
+    destination: PushDestination,
+    payload: PushPayload,
+    options?: PushSendOptions
+  ): Promise<PushResult | PushDryRunResult> {
     let adapter: string | undefined;
     let target: string | undefined;
+    const dryRun = options?.dryRun === true;
+
     try {
       if (this.#destroyed) {
         throw new PushError('CLIENT_DESTROYED', 'PushClient has been destroyed.');
@@ -35,28 +59,55 @@ export class PushClient {
       }
 
       const result = await selectedAdapter.send(normalizedDestination.target, payload, options);
-      if (result.success) {
-        return {
-          success: true,
-          adapter,
-          ...(target === undefined ? {} : { target }),
-          receipt: result.receipt
-        };
+
+      if (dryRun) {
+        // dry run
+        if (result.success) {
+          return {
+            dryRun: true,
+            success: true,
+            adapter,
+            ...(target === undefined ? {} : { target }),
+            receipt: result.receipt
+          };
+        } else {
+          return {
+            dryRun: true,
+            success: false,
+            adapter,
+            ...(target === undefined ? {} : { target }),
+            ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+            error: {
+              code: result.error.code,
+              message: result.error.message
+            }
+          };
+        }
       } else {
-        return {
-          success: false,
-          adapter,
-          ...(target === undefined ? {} : { target }),
-          ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
-          error: {
-            code: result.error.code,
-            message: result.error.message
-          }
-        };
+        // send messages
+        if (result.success) {
+          return {
+            success: true,
+            adapter,
+            ...(target === undefined ? {} : { target }),
+            receipt: result.receipt
+          };
+        } else {
+          return {
+            success: false,
+            adapter,
+            ...(target === undefined ? {} : { target }),
+            ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+            error: {
+              code: result.error.code,
+              message: result.error.message
+            }
+          };
+        }
       }
     } catch (error) {
-      return {
-        success: false,
+      const failure = {
+        success: false as const,
         ...(adapter === undefined ? {} : { adapter }),
         ...(target === undefined ? {} : { target }),
         error: {
@@ -65,10 +116,16 @@ export class PushClient {
           message: error instanceof Error && error.message ? error.message : 'Unknown error'
         }
       };
+
+      if (dryRun) {
+        return { dryRun: true, ...failure };
+      } else {
+        return failure;
+      }
     }
   }
 
-  destroy(): Promise<void> {
+  public async destroy(): Promise<void> {
     if (this.#destroyPromise) {
       return this.#destroyPromise;
     }

@@ -6,11 +6,12 @@ export class NapCatConnection {
   readonly #config: NapCatConfig;
   readonly #factory: NapCatFactory;
   readonly #destroyController = new AbortController();
+
   #client?: NapCatClient;
   #connection?: Promise<NapCatClient>;
   #destroyPromise?: Promise<void>;
 
-  constructor(config: NapCatConfig, factory: NapCatFactory = createNapCatClient) {
+  public constructor(config: NapCatConfig, factory: NapCatFactory = createNapCatClient) {
     this.#config = config;
     this.#factory = factory;
   }
@@ -19,7 +20,7 @@ export class NapCatConnection {
     return this.#destroyController.signal;
   }
 
-  connect(): Promise<NapCatClient> {
+  public connect(): Promise<NapCatClient> {
     if (this.#destroyController.signal.aborted) {
       return Promise.reject(new NapCatError('ABORTED', 'NapCat adapter has been destroyed.'));
     }
@@ -52,7 +53,7 @@ export class NapCatConnection {
     return connection;
   }
 
-  destroy(): Promise<void> {
+  public destroy(): Promise<void> {
     if (this.#destroyPromise) return this.#destroyPromise;
     this.#destroyController.abort();
     const client = this.#client;

@@ -1,6 +1,6 @@
 ---
 name: pushc
-description: Send messages and notifications with the pushc CLI. Use when the user asks to push, send, or deliver a notification with pushc.
+description: Send messages and notifications with the pushc CLI. Use when the user asks to push or send a notification with pushc.
 metadata:
   author: OneKuma
   version: '0.0.0'
@@ -21,11 +21,11 @@ other operations, configure only when necessary, and never expose credentials in
    and npm installation before proceeding. Do not require a particular pushc version unless the task
    names one.
 4. Run `pushc targets --json` (plus `--config <path>` when the user supplied a config) to validate
-   configuration and adapter connectivity and to discover usable destinations.
+   the configuration and discover usable destinations. This does not test platform connectivity.
 5. If pushc reports that no config exists, stop the preflight and read
    [reference/configuration.md](reference/configuration.md) completely before helping the user
-   create one. If a config exists but is invalid or an adapter cannot connect, use the same reference
-   to diagnose it. Never send a test notification unless the user asks for one.
+   create one. If a config exists but is invalid, use the same reference to diagnose it. Never send a
+   test notification unless the user asks for one.
 
 `config.toml` is non-sensitive and may be read and edited. It must contain only placeholders for
 tokens, keys, passwords, credentials, and private webhook URLs. Never read, print, or modify an
@@ -47,8 +47,9 @@ Add `--config <path>` only when the user supplies or selects a non-default confi
 
 ### `pushc send`
 
-Prerequisite: know the intended destination from `pushc targets`, have non-empty message content, and
-have user intent to perform the external send. Always pass `--target <adapter[:target]>`.
+Prerequisite: know the intended destination from `pushc targets` and have non-empty message content.
+For a real send, also require user intent to perform the external side effect. Always pass
+`--target <adapter[:target]>`.
 
 Send a short message:
 
@@ -74,6 +75,15 @@ Do not combine positional content with `--file`. Always provide `--target`; a de
 colon selects that adapter's default target and does not select its sole named target. `--param`
 entries use `key=value`; do not use title or params to pass secrets.
 
+Preview the final send without performing it:
+
+```bash
+pushc send --target alerts:release --dry-run "Build completed"
+```
+
+Use dry-run when the user asks to preview or validate a send. A successful dry-run means the send
+was prepared, not performed; pushc does not contact the destination.
+
 Read [reference/cli.md](reference/cli.md) when exact command behavior, output schemas, config
 resolution, input rules, exit status, or troubleshooting details matter.
 
@@ -82,7 +92,7 @@ resolution, input rules, exit status, or troubleshooting details matter.
 - Ask the user which listed target to use when intent is ambiguous.
 - Before sending, show or summarize the message and destination when either was inferred rather than
   explicitly supplied. Sending a notification is an external side effect.
-- Use `--json` to distinguish validation errors from delivery failures. Exit status `0` means success,
-  `2` means usage/configuration/lookup failure, and `1` means delivery or unexpected runtime failure.
+- Use `--json` to distinguish validation errors from send failures. Exit status `0` means success,
+  `2` means usage/configuration/lookup failure, and `1` means send or unexpected runtime failure.
 - Do not retry a failed send automatically: the remote service may have accepted the message before
   the failure became visible.

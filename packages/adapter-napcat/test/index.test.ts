@@ -15,6 +15,36 @@ function mockClient(): NapCatClient {
 }
 
 describe('napcat adapter', () => {
+  it('prepares the final request in dry-run without creating a connection', async () => {
+    const factory = vi.fn(() => mockClient());
+    const adapter = new NapCatAdapter(
+      { base_url: 'ws://127.0.0.1:3001', access_token: 'secret' },
+      { factory }
+    );
+
+    await expect(
+      adapter.send(
+        { group_id: '123456' },
+        { message: 'hello', title: 'ignored', param: { x: 'ignored' } },
+        { dryRun: true }
+      )
+    ).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      receipt: {
+        request: {
+          method: 'send_msg',
+          params: {
+            group_id: 123456,
+            message: [{ type: 'text', data: { text: 'hello' } }]
+          }
+        }
+      }
+    });
+    expect(factory).not.toHaveBeenCalled();
+    await adapter.destroy();
+  });
+
   it.each([
     [
       'user',
@@ -138,7 +168,7 @@ describe('napcat adapter', () => {
     });
     await expect(adapter.send({ group_id: '123' }, { message: 'again' })).resolves.toMatchObject({
       success: false,
-      error: { code: 'SEND_FAILED', message: 'NapCat failed to deliver the message.' }
+      error: { code: 'SEND_FAILED', message: 'NapCat failed to send the message.' }
     });
     expect(client.connect).toHaveBeenCalledOnce();
     expect(client.disconnect).not.toHaveBeenCalled();

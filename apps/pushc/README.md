@@ -71,6 +71,16 @@ pushc send --target bark \
   "Production deployment succeeded"
 ```
 
+Preview the request without sending it:
+
+```bash
+pushc send --target bark \
+  --dry-run --json \
+  --title "Build completed" \
+  --param group=releases \
+  "Production deployment succeeded"
+```
+
 Read a longer message from a UTF-8 file:
 
 ```bash

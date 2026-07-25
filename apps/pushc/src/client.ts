@@ -22,7 +22,9 @@ export type PushRuntime =
       readonly redactions: readonly string[];
     };
 
-export async function makePushRuntime(options: FindConfigPathOptions = {}): Promise<PushRuntime> {
+export interface MakePushRuntimeOptions extends FindConfigPathOptions {}
+
+export async function makePushRuntime(options: MakePushRuntimeOptions = {}): Promise<PushRuntime> {
   let redactions: readonly string[] = [];
   try {
     const configFilePath = await findConfigPath(options);
@@ -66,7 +68,6 @@ async function createPushClient(config: ReturnType<typeof parsePushConfig>): Pro
           adapter.targets.register(targetName, partial);
         }
       }
-      await adapter.initialize?.();
       client.adapters.register(name, adapter);
     } catch (error) {
       await adapter?.destroy?.().catch(() => undefined);

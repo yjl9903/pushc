@@ -23,24 +23,20 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
   readonly #connection: NapCatConnection;
   readonly #targetDefaults: Readonly<Record<string, unknown>>;
 
-  constructor(config: unknown, options: CreateNapCatAdapterOptions = {}) {
+  public constructor(config: unknown, options: CreateNapCatAdapterOptions = {}) {
     super(parseNapCatConfig(config));
     this.#targetDefaults = napCatTargetDefaults(config);
     this.#connection = new NapCatConnection(this.config, options.factory);
   }
 
-  parseTarget(input: unknown): NapCatTargetConfig {
+  public parseTarget(input: unknown): NapCatTargetConfig {
     return parseNapCatTarget({
       ...this.#targetDefaults,
       ...parseNapCatTargetPartial(input)
     });
   }
 
-  protected async sendTarget(
-    target: NapCatTargetConfig,
-    payload: PushPayload,
-    options: Readonly<PushSendOptions>
-  ): Promise<PushAdapterSendResult<NapCatReceipt>> {
+  protected prepareRequest(target: NapCatTargetConfig, payload: PushPayload): NapCatRequestReceipt {
     const params: NapCatSendMessageParams = {
       ...('user_id' in target
         ? { user_id: Number(target.user_id) }
@@ -51,7 +47,13 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
       method: 'send_msg',
       params
     };
+    return request;
+  }
 
+  protected async sendRequest(
+    request: NapCatRequestReceipt,
+    options: Readonly<PushSendOptions>
+  ): Promise<PushAdapterSendResult<NapCatReceipt>> {
     const timeoutSignal = AbortSignal.timeout(this.config.timeout_ms);
     const operationSignal = AbortSignal.any([
       ...(options.signal ? [options.signal] : []),
@@ -97,7 +99,7 @@ export class NapCatAdapter extends PushAdapter<NapCatConfig, NapCatTargetConfig,
     }
   }
 
-  destroy(): Promise<void> {
+  public destroy(): Promise<void> {
     return this.#connection.destroy();
   }
 }
@@ -111,5 +113,5 @@ function napCatFailureMessage(error: unknown): string {
       // Fall back when an exotic error object exposes a throwing message getter.
     }
   }
-  return 'NapCat failed to deliver the message.';
+  return 'NapCat failed to send the message.';
 }

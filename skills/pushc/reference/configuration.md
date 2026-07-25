@@ -153,8 +153,8 @@ pushc targets --json
 ```
 
 Add `--config <path>` when validating a non-discovered file. A successful result confirms that the
-configuration parses, every target validates, and adapters initialize; NapCat initialization also
-checks its WebSocket connection. It does not send a notification.
+configuration parses and every target validates. It does not establish a NapCat WebSocket connection
+or send a notification.
 
 After validation, report the available destinations and ask the user which one to use if it is not
 already clear. Do not add a speculative test target or send a test message without approval.

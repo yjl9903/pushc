@@ -61,6 +61,80 @@ describe('built CLI', () => {
     `);
   });
 
+  it('returns a redacted final request without sending it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-dry-run-'));
+    const config = join(root, 'config.toml');
+    await writeFile(
+      config,
+      [
+        '[adapters.webhook]',
+        'type = "webhook"',
+        'url = "http://127.0.0.1:1/${PUSHC_TEST_DRY_RUN_TOKEN}"',
+        '[adapters.webhook.request]',
+        'content_type = "application/json"',
+        '[adapters.webhook.request.headers]',
+        'Authorization = "Bearer ${PUSHC_TEST_DRY_RUN_TOKEN}"',
+        '[adapters.webhook.request.body]',
+        'message = "{{message}}"',
+        'title = "{{title:-pushc}}"',
+        'group = "{{param.group:-default}}"'
+      ].join('\n')
+    );
+
+    try {
+      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [
+          cli,
+          'send',
+          'build complete',
+          '--target',
+          'webhook',
+          '--title',
+          '',
+          '--param',
+          'group=releases',
+          '--dry-run',
+          '--config',
+          config,
+          '--json'
+        ],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, PUSHC_TEST_DRY_RUN_TOKEN: 'private-token' }
+        }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(JSON.parse(result.stdout)).toEqual({
+        dryRun: true,
+        success: true,
+        adapter: 'webhook',
+        receipt: {
+          request: {
+            url: '[REDACTED]',
+            method: 'POST',
+            headers: {
+              authorization: '[REDACTED]',
+              'content-type': 'application/json'
+            },
+            content_type: 'application/json',
+            timeout_ms: 10_000,
+            body: {
+              message: 'build complete',
+              title: 'pushc',
+              group: 'releases'
+            }
+          }
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('registers the targets command at the executable entry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pushc-smoke-'));
     const config = join(root, 'config.toml');

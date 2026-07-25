@@ -367,6 +367,56 @@ describe('webhook templates and requests', () => {
     `);
   });
 
+  it('prepares the final request in dry-run without calling fetch', async () => {
+    const fetch = okFetch();
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com/base',
+        request: {
+          url: 'https://example.com/push/{{param.topic}}',
+          headers: { 'X-Title': '{{title:-pushc}}' },
+          body: {
+            message: '{{message}}',
+            group: '{{param.group:-default}}'
+          }
+        }
+      },
+      { fetch }
+    );
+
+    await expect(
+      adapter.send(
+        undefined,
+        {
+          message: 'build complete',
+          title: '',
+          param: { topic: 'deployments', group: 'production' }
+        },
+        { dryRun: true }
+      )
+    ).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      receipt: {
+        request: {
+          url: 'https://example.com/push/deployments',
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-title': 'pushc'
+          },
+          content_type: 'application/json',
+          timeout_ms: 10_000,
+          body: {
+            message: 'build complete',
+            group: 'production'
+          }
+        }
+      }
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('scans once, supports fallback, and preserves invalid expressions', () => {
     const payload = {
       message: '{{title}}',

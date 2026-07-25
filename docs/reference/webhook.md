@@ -323,7 +323,7 @@ Content-Type: application/json
 | 字段      | 类型   | 说明                               |
 | --------- | ------ | ---------------------------------- |
 | `token`   | string | 发送应用的 API Token。             |
-| `user`    | string | 接收用户或 delivery group 的 key。 |
+| `user`    | string | 接收用户或 Pushover group 的 key。 |
 | `message` | string | 通知正文，通常映射 `{{message}}`。 |
 
 ### 扩展字段

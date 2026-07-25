@@ -89,6 +89,69 @@ describe('CLI formatting', () => {
     ).toBe('Error: No pushc config found.\n');
   });
 
+  it('formats dry-run results', () => {
+    const ready = {
+      dryRun: true as const,
+      success: true as const,
+      adapter: 'webhook',
+      target: 'ops',
+      receipt: {
+        request: {
+          url: 'https://example.com/secret',
+          headers: { authorization: 'secret' },
+          body: { message: 'hello' }
+        }
+      }
+    };
+    expect(formatSendResult(ready, false, ['secret'])).toBe(
+      [
+        'Dry run ready: webhook:ops',
+        'Request:',
+        '{',
+        '  "url": "https://example.com/[REDACTED]",',
+        '  "headers": {',
+        '    "authorization": "[REDACTED]"',
+        '  },',
+        '  "body": {',
+        '    "message": "hello"',
+        '  }',
+        '}',
+        ''
+      ].join('\n')
+    );
+    expect(JSON.parse(formatSendResult(ready, true, ['secret']))).toMatchInlineSnapshot(`
+      {
+        "adapter": "webhook",
+        "dryRun": true,
+        "receipt": {
+          "request": {
+            "body": {
+              "message": "hello",
+            },
+            "headers": {
+              "authorization": "[REDACTED]",
+            },
+            "url": "https://example.com/[REDACTED]",
+          },
+        },
+        "success": true,
+        "target": "ops",
+      }
+    `);
+    expect(
+      formatSendResult(
+        {
+          dryRun: true,
+          success: false,
+          adapter: 'webhook',
+          target: 'ops',
+          error: { code: 'TARGET_NOT_FOUND', message: 'missing' }
+        },
+        false
+      )
+    ).toBe('Dry run failed: webhook:ops\nError: missing\n');
+  });
+
   it('formats target lists', () => {
     const targets = [{ adapter: 'webhook' }, { adapter: 'qq', target: 'ops' }];
     expect(formatTargets(targets, false)).toBe('webhook\nqq:ops\n');
@@ -124,6 +187,21 @@ describe('CLI formatting', () => {
     ).toBe(1);
     expect(
       getSendResultExitCode({
+        success: false,
+        error: { code: 'TARGET_NOT_FOUND', message: 'missing' }
+      })
+    ).toBe(2);
+    expect(
+      getSendResultExitCode({
+        dryRun: true,
+        success: true,
+        adapter: 'webhook',
+        receipt: { request: {} }
+      })
+    ).toBe(0);
+    expect(
+      getSendResultExitCode({
+        dryRun: true,
         success: false,
         error: { code: 'TARGET_NOT_FOUND', message: 'missing' }
       })

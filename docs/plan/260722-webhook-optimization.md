@@ -566,10 +566,9 @@ Webhook 保持 runtime-neutral，不依赖 Node API，但运行时需要标准 `
 - 渲染后的 header value 与最终 Content-Type 冲突。
 - body serializer 及 GET/HEAD body 限制。
 
-`pushc targets` 只能证明配置可解析、adapter/default 和具名 target 的结构有效，以及 adapter
-可以 initialize。它不能证明 request URL、header/body 模板结果或最终 HTTP request 有效，也
-不会构造伪 payload 或发送测试请求。Webhook initialize 不访问远端；NapCat 仍可能在
-initialize 时建立连接。
+`pushc targets` 只能证明配置可解析，以及 adapter/default 和具名 target 的结构有效。它不能
+证明 request URL、header/body 模板结果或最终 HTTP request 有效，也不会构造伪 payload、
+建立平台连接或发送测试请求。adapter 不提供主动初始化阶段；需要连接时由真实发送惰性获取。
 
 ## 14. 错误、取消与现有响应行为
 
