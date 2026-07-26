@@ -18,7 +18,7 @@ export interface PushPayload {
   readonly content: PushContentInput;
   readonly attachments?: readonly string[];
   readonly title?: string;
-  readonly param?: Readonly<Record<string, string>> | null;
+  readonly param?: Readonly<Record<string, string>>;
 }
 
 export interface NormalizedPushPayload {

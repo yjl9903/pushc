@@ -49,17 +49,12 @@ export class NapCatAdapter extends PushAdapter<
     });
   }
 
-  protected async prepareRequest(
+  protected prepareRequest(
     target: NapCatTargetConfig,
     payload: NormalizedPushPayload,
     options: PushAdapterOperationOptions
   ): Promise<PreparedNapCatRequest> {
-    return await prepareNapCatRequest(
-      target,
-      payload,
-      this.config.max_attachment_bytes,
-      options.signal
-    );
+    return prepareNapCatRequest(target, payload, this.config.max_attachment_bytes, options.signal);
   }
 
   protected async dispatchRequest(
@@ -126,12 +121,8 @@ export class NapCatAdapter extends PushAdapter<
 
 function napCatFailureMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
-    try {
-      const message = Reflect.get(error, 'message');
-      if (typeof message === 'string' && message) return message;
-    } catch {
-      // Fall back when an exotic error object exposes a throwing message getter.
-    }
+    const message = (error as { readonly message?: unknown }).message;
+    if (typeof message === 'string' && message) return message;
   }
   return 'NapCat failed to send the message.';
 }

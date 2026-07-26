@@ -39,7 +39,7 @@ export class WebhookAdapter extends PushAdapter<
     try {
       return resolveWebhookTarget(this.config, parseWebhookTargetPartial(input));
     } catch (error) {
-      if (error instanceof WebhookError && error.code === 'INVALID_CONFIG') {
+      if (error instanceof WebhookError) {
         throw new PushError('INVALID_CONFIG', error.message, { cause: error });
       }
       throw error;
@@ -59,7 +59,7 @@ export class WebhookAdapter extends PushAdapter<
       const request = buildWebhookRequest(target.request, this.#origin, payload);
       return { receiptRequest: request, transportRequest: request };
     } catch (error) {
-      if (error instanceof WebhookError && error.code === 'INVALID_CONFIG') {
+      if (error instanceof WebhookError) {
         throw new PushError('INVALID_CONFIG', error.message, { cause: error });
       } else {
         throw error;
@@ -67,10 +67,10 @@ export class WebhookAdapter extends PushAdapter<
     }
   }
 
-  protected async dispatchRequest(
+  protected dispatchRequest(
     prepared: PushPreparedRequest<WebhookRequestReceipt, WebhookRequestReceipt>,
     options: PushAdapterOperationOptions
   ): Promise<PushDispatchResult<never, WebhookResponseReceipt>> {
-    return await sendWebhook(this.#fetch, prepared.transportRequest, options);
+    return sendWebhook(this.#fetch, prepared.transportRequest, options);
   }
 }

@@ -69,9 +69,10 @@ MIME 记为 `application/octet-stream`；类型分类不区分大小写，receip
 消息的本地附件原始总字节数不得超过 `max_attachment_bytes`。每项计算 SHA-256 并在内部
 转为 `base64://`。HTTP(S) URL 不受本地字节限制，完整 URL 原样进入内部 transport。公开
 request 的本地附件保存 basename、MIME、size、SHA-256 和 `encoding: 'base64'`；远程附件
-先 percent-decode pathname leaf，再去除解码后出现的路径分隔符，拒绝 control character，
-并保存安全 basename、MIME、host 和 `encoding: 'url'`。它不保存 Base64、本地路径、完整
-URL 或 query。每个 normalized text node 都以原始字符串生成一个 text segment，不 trim、
+优先 percent-decode pathname leaf；leaf 包含无法解码的 literal `%` 时保留原值。随后去除
+解码后出现的路径分隔符，拒绝 control character，并保存安全 basename、MIME、host 和
+`encoding: 'url'`。它不保存 Base64、本地路径、完整 URL 或 query。每个 normalized text node
+都以原始字符串生成一个 text segment，不 trim、
 连接或丢弃空白节点。显式 AST 的 text/attachment 顺序保持不变；shortcut attachments 的
 前置顺序已由 core normalize。
 

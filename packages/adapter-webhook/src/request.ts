@@ -32,46 +32,33 @@ export function buildWebhookRequest(
   try {
     const url = parseFinalUrl(renderWebhookTemplate(target.url, payload), origin);
 
-    const headerMap = new Map<string, string>();
-    for (const [name, value] of Object.entries(target.headers)) {
-      headerMap.set(name, renderWebhookTemplate(value, payload));
-    }
+    const headers = new Headers(
+      Object.entries(target.headers).map(([name, value]) => [
+        name,
+        renderWebhookTemplate(value, payload)
+      ])
+    );
 
     const body = target.body === undefined ? undefined : renderWebhookBody(target.body, payload);
     if (body !== undefined) {
       const configured = parseContentType(target.content_type ?? 'application/json');
-      const explicitHeader = headerMap.get('content-type');
-      if (explicitHeader === undefined) {
-        headerMap.set('content-type', configured.value);
+      const explicitHeader = headers.get('content-type');
+      if (explicitHeader === null) {
+        headers.set('content-type', configured.value);
       } else if (parseContentType(explicitHeader).essence !== configured.essence) {
         throw invalidConfig();
       }
-      if (configured.essence === 'text/plain') {
-        if (typeof body !== 'string') throw invalidConfig();
-      } else {
-        try {
-          JSON.stringify(body);
-        } catch (cause) {
-          throw invalidConfig(cause);
-        }
-      }
+      if (configured.essence === 'text/plain' && typeof body !== 'string') throw invalidConfig();
     }
 
     if ((target.method === 'GET' || target.method === 'HEAD') && body !== undefined) {
       throw invalidConfig();
     }
 
-    let headers: Headers;
-    try {
-      headers = new Headers([...headerMap]);
-    } catch (cause) {
-      throw invalidConfig(cause);
-    }
-
     return {
       url,
       method: target.method,
-      headers: Object.freeze(Object.fromEntries(headers)),
+      headers: Object.fromEntries(headers),
       ...(target.content_type === undefined ? {} : { content_type: target.content_type }),
       timeout_ms: target.timeout_ms,
       ...(body === undefined ? {} : { body })
@@ -87,11 +74,9 @@ export async function sendWebhook(
   request: WebhookRequestReceipt,
   options: PushAdapterOperationOptions
 ): Promise<PushDispatchResult<never, WebhookResponseReceipt>> {
-  if (typeof fetch !== 'function') {
-    return failure('This runtime does not provide fetch.');
-  }
-
-  const requestAbort = requestSignal(options.signal, request.timeout_ms);
+  const timeoutSignal = AbortSignal.timeout(request.timeout_ms);
+  const signal =
+    options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
   try {
     const contentType =
       request.content_type === undefined ? undefined : parseContentType(request.content_type);
@@ -107,7 +92,7 @@ export async function sendWebhook(
       method: request.method,
       headers: request.headers,
       ...(body === undefined ? {} : { body }),
-      signal: requestAbort.signal
+      signal
     });
 
     const responseReceipt = await readResponse(response);
@@ -122,17 +107,15 @@ export async function sendWebhook(
       };
     }
   } catch (error) {
-    if (requestAbort.signal.aborted) {
+    if (signal.aborted) {
       return failure(
-        requestAbort.signal.reason === timeoutReason
+        timeoutSignal.aborted && signal.reason === timeoutSignal.reason
           ? `Webhook request timed out after ${request.timeout_ms}ms.`
           : 'Webhook request was aborted.'
       );
     } else {
       return failure(error instanceof WebhookError ? error.message : 'Webhook request failed.');
     }
-  } finally {
-    requestAbort.cleanup();
   }
 }
 
@@ -148,10 +131,8 @@ function failure(
 }
 
 async function readResponse(response: Response): Promise<WebhookResponseReceipt> {
-  const headers = Object.freeze(
-    Object.fromEntries(
-      [...response.headers].filter(([name]) => !FILTERED_RESPONSE_HEADERS.has(name.toLowerCase()))
-    )
+  const headers = Object.fromEntries(
+    [...response.headers].filter(([name]) => !FILTERED_RESPONSE_HEADERS.has(name))
   );
   let body: JsonValue | undefined;
   try {
@@ -171,37 +152,14 @@ async function readResponse(response: Response): Promise<WebhookResponseReceipt>
 }
 
 function parseFinalUrl(input: string, origin: string): string {
-  try {
-    const url = new URL(input);
-    if (
-      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
-      url.username !== '' ||
-      url.password !== '' ||
-      url.origin !== origin
-    ) {
-      throw invalidConfig();
-    }
-    return url.toString();
-  } catch (cause) {
-    if (cause instanceof WebhookError) throw cause;
-    throw invalidConfig(cause);
+  const url = new URL(input);
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.origin !== origin
+  ) {
+    throw invalidConfig();
   }
-}
-
-const timeoutReason = Symbol('timeout');
-
-function requestSignal(parent: AbortSignal | undefined, timeoutMs: number) {
-  const controller = new AbortController();
-  const abortFromParent = () => controller.abort(parent?.reason);
-  if (parent?.aborted) abortFromParent();
-  else parent?.addEventListener('abort', abortFromParent, { once: true });
-  const timer = setTimeout(() => controller.abort(timeoutReason), timeoutMs);
-
-  return {
-    signal: controller.signal,
-    cleanup() {
-      clearTimeout(timer);
-      parent?.removeEventListener('abort', abortFromParent);
-    }
-  };
+  return url.toString();
 }

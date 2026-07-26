@@ -5,6 +5,7 @@ import { parse as parseToml } from 'smol-toml';
 import type { PushPayload } from '@pushc/core';
 
 import { MessageInputError } from '../error.js';
+import { isRecord } from '../utils/value.js';
 
 export type MessageFormat = 'json' | 'toml' | 'text';
 
@@ -120,7 +121,7 @@ function mapAttachmentContent(
   input: Readonly<Record<string, unknown>>,
   baseDirectory: string
 ): Readonly<Record<string, unknown>> {
-  if (Object.hasOwn(input, 'media_type') && Object.hasOwn(input, 'mediaType')) {
+  if (input.media_type !== undefined && input.mediaType !== undefined) {
     throw new MessageInputError(
       'MESSAGE_INVALID',
       'Attachment content cannot define both media_type and mediaType.'
@@ -135,8 +136,4 @@ function mapAttachmentContent(
       : {}),
     ...(mediaType === undefined ? {} : { mediaType })
   };
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return typeof input === 'object' && input !== null && !Array.isArray(input);
 }

@@ -116,9 +116,9 @@ export abstract class PushAdapter<
       const normalizedPayload = normalizePayload(payload);
       const normalizedOptions = normalizeSendOptions(options);
       assertNotAborted(normalizedOptions.signal);
-      const operationOptions: PushAdapterOperationOptions = Object.freeze({
+      const operationOptions: PushAdapterOperationOptions = {
         ...(normalizedOptions.signal === undefined ? {} : { signal: normalizedOptions.signal })
-      });
+      };
 
       prepared = await this.prepareRequest(
         this.targets.resolve(target),
@@ -138,7 +138,7 @@ export abstract class PushAdapter<
       }
     } catch (error) {
       const failure = {
-        ...preparationFailure(error, dryRun),
+        ...preparationFailure(error),
         ...(prepared === undefined
           ? {}
           : {
@@ -164,17 +164,13 @@ function assertNotAborted(signal: AbortSignal | undefined): void {
   });
 }
 
-function preparationFailure(error: unknown, dryRun: boolean) {
+function preparationFailure(error: unknown) {
   return {
     success: false as const,
     error: {
       code: error instanceof PushError ? error.code : 'SEND_FAILED',
       message:
-        error instanceof Error && error.message
-          ? error.message
-          : dryRun
-            ? 'Message preparation failed.'
-            : 'Message sending failed.'
+        error instanceof Error && error.message ? error.message : 'Message preparation failed.'
     }
   };
 }

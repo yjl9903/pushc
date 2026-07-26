@@ -3,7 +3,6 @@ import type { PushTargetInput } from './types.js';
 
 import { PushError } from './error.js';
 import { isRecord } from './utils/value.js';
-import { errorMessage } from './utils/error.js';
 import { isDestinationName, validateDestinationName } from './utils/destination.js';
 
 type AnyTargetAdapter<TTarget extends object> = PushAdapter<any, TTarget, any>;
@@ -47,7 +46,10 @@ export class PushTargets<TTarget extends object> implements Iterable<[string, TT
       return this.#items.get(input) as TTarget;
     }
 
-    return this.#parse(input === undefined ? 'Default target' : 'Temporary target', input ?? {});
+    return this.#parse(
+      input === undefined ? 'Default target' : 'Temporary target',
+      input === undefined ? {} : input
+    );
   }
 
   has(name: string): boolean {
@@ -99,7 +101,9 @@ export class PushTargets<TTarget extends object> implements Iterable<[string, TT
       }
       throw new PushError(
         'INVALID_CONFIG',
-        `Invalid configuration for ${label.toLowerCase()}: ${errorMessage(error)}`,
+        `Invalid configuration for ${label.toLowerCase()}: ${
+          error instanceof Error && error.message ? error.message : 'Unknown error'
+        }`,
         { cause: error }
       );
     }

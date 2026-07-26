@@ -38,11 +38,9 @@ export function renderWebhookBody(value: JsonValue, payload: NormalizedPushPaylo
   if (typeof value === 'string') return renderWebhookTemplate(value, payload);
   if (Array.isArray(value)) return value.map((item) => renderWebhookBody(item, payload));
   if (value !== null && typeof value === 'object') {
-    const result = Object.create(null) as Record<string, JsonValue>;
-    for (const [key, item] of Object.entries(value)) {
-      result[key] = renderWebhookBody(item, payload);
-    }
-    return result;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, renderWebhookBody(item, payload)])
+    );
   }
   return value;
 }
@@ -70,10 +68,8 @@ function evaluateExpression(
   } else if (variable.startsWith('param.')) {
     const key = variable.slice('param.'.length);
     if (!PARAM_KEY_PATTERN.test(key)) return undefined;
-    value =
-      payload.param !== undefined && Object.hasOwn(payload.param, key)
-        ? payload.param[key]
-        : undefined;
+    const candidate = payload.param?.[key];
+    value = typeof candidate === 'string' ? candidate : undefined;
   } else {
     return undefined;
   }

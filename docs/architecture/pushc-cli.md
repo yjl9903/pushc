@@ -10,7 +10,8 @@ adapter 产品语义。`config.toml` 是可供 agent 阅读和修改的非敏感
 
 配置从 `--config`、`PUSHC_CONFIG`、项目 `.pushc/config.toml`、XDG 与 home 路径依次发现。
 app 层读取 TOML、由运行时加载相邻 `.env` 并递归展开 `${ENV_NAME}`；core 和 adapters
-不访问文件或环境。
+不访问文件或环境。展开只递归遍历 TOML table 与 array；datetime 等 parser 标量保持原值，
+交给对应配置字段的语义校验。
 
 `makePushRuntime(options)` 统一完成配置发现、加载、adapter 构造和具名 target 注册，并返回
 `{ success: true, client, redactions }` 或 `{ success: false, error, redactions }`。任一步失败会

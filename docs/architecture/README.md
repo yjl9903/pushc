@@ -54,6 +54,21 @@ Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件
 - `dist/` 是构建产物，不作为设计或实现来源。
 - 综合评估改动量与影响范围较大的需求，才在 `docs/plan/` 记录背景、目标、关键设计决策和技术方案；同一上下文优先复用已有 plan。plan 不能代替本目录的现状描述。
 
+## JavaScript 运行时输入边界
+
+公共 API 的运行时校验只面向 TypeScript 类型所描述的合理数据：object literal、JSON/TOML
+parser 结果、普通 object、普通稠密 array 和标准平台对象。库负责校验业务可观察的字段、类型、
+取值、未知字段以及 URL、路径、credentials、大小等外部边界，并把这些范围内的失败归一化为
+稳定错误。支持 parser 结果不表示 parser 产生的标量对象可以充当 table；例如 TOML datetime
+仍按标量处理，在要求普通 object、JSON object 或 table 的字段中必须被拒绝。
+
+调用方负责在进入 pushc 前把数据物化为上述普通结构。稀疏 array、自定义 prototype、继承
+字段、getter、Proxy、symbol key、通过普通 object 保存时与 `Object.prototype` 成员冲突的
+动态 string key、运行期间并发 mutation、monkey-patched builtin 等 JavaScript corner case
+不属于公共兼容性或安全承诺；实现不为它们增加专项分支或测试，也不保证它们的失败阶段和
+错误码。代码评审不应仅为覆盖这些输入而增加复杂度。库在普通 object 上按动态 key 读取业务
+字段时仍须检查字段类型，不能把缺失字段继承到的 `Object.prototype` 成员当成有效业务值。
+
 ## 文档维护
 
 修改能力、数据流、公共接口、模块职责或依赖方向时，同步更新本目录。文档只描述当前有效设计；较大需求的设计背景与方案保留在 `docs/plan/`。若代码与架构文档不一致，应在继续实现前先明确并修正两者的偏差。

@@ -46,8 +46,8 @@
 7. core 和 webhook 本轮涉及的 runtime boundary 使用 Zod。每个实际 import Zod 的 workspace
    都声明自己的直接依赖；Zod error 不作为公共错误暴露。
 8. resolved target 保持为普通的只读配置对象；`sendTarget` 根据 target、payload 和 options
-   构造本次请求。开放 key 的 headers 和 JSON object 只在解析、合并或请求构造的局部过程使用
-   `Map`，避免 `__proto__`、`constructor` 等 object property 语义影响判断。
+   构造本次请求。headers 和需要浅合并的 JSON object 使用普通 object；不为与 object
+   prototype 成员冲突的动态 key 建立另一套数据模型，也不承诺隔离调用方后续 mutation。
 9. 配置期和 send-time 的配置错误统一为 `INVALID_CONFIG`；transport、HTTP、timeout 和取消
    继续使用现有发送错误语义。
 10. `config.toml` 是允许 agent 阅读和修改的非敏感明文；秘密只允许通过 `${ENV_NAME}` 从
@@ -63,7 +63,7 @@
 export interface PushPayload {
   readonly message: string;
   readonly title?: string;
-  readonly param?: Readonly<Record<string, string>> | null;
+  readonly param?: Readonly<Record<string, string>>;
 }
 
 export interface PushSendOptions {
@@ -78,11 +78,10 @@ export type PushDestination =
       readonly adapter: string;
       readonly target?: PushTargetInput;
     };
-
 ```
 
-base adapter 校验 payload 后直接把安全复制的 `PushPayload` 传给 concrete adapter；缺省
-缺省、`undefined` 或 `null` 的 `param` normalize 后保持 `undefined`，需要模板上下文的
+base adapter 校验并归一化 payload 后把 `NormalizedPushPayload` 传给 concrete adapter；缺省
+缺省或 `undefined` 的 `param` normalize 后保持 `undefined`，需要模板上下文的
 adapter 将其视为空 Record。后续新增公共发送
 字段加入 `PushPayload`，不混入 `param`。
 
@@ -155,13 +154,11 @@ client.send(destination, payload, options?)
 
 - `message` 必须是 string，且 trim 后非空；校验不修改原字符串。
 - `title` 存在时必须是 string；空字符串合法，并在模板 `:-` 中视为无值。
-- 非 nullish `param` 必须是 plain object，每个 value 必须是 string，未知 payload 字段直接
+- `param` 存在时必须是 plain object，每个 value 必须是 string，未知 payload 字段直接
   拒绝。
 - `param` key 必须匹配 `[A-Za-z0-9][A-Za-z0-9_.-]*`，大小写保留并区分大小写。
-- 缺省、`undefined` 或 `null` param 保持 `undefined`；object param 复制为冻结的
-  null-prototype Record。
-- param 查询必须使用 `Object.hasOwn()`，不得从 prototype chain 读取 `constructor`、
-  `toString` 等名称。
+- 缺省或 `undefined` param 保持 `undefined`；object param 校验为普通 Record。
+- 模板只使用查询结果为 string 的 param value；其他结果按缺失处理。
 - payload 校验失败映射为 `PushError('INVALID_MESSAGE')`，不暴露 `ZodError`。
 
 ### 5.2 Destination 和 options
@@ -170,9 +167,7 @@ client.send(destination, payload, options?)
   destination name 规则。
 - destination 错误映射为 `INVALID_TARGET`；adapter 不存在仍使用 `ADAPTER_NOT_FOUND`。
 - options 使用 strict schema；失败映射为新增的 `INVALID_SEND_OPTIONS`。
-- `signal` 不使用 `z.instanceof(AbortSignal)`，避免缺失全局 constructor 和跨 realm 失败。
-  使用 runtime-neutral guard 校验发送路径需要的 `aborted`、`addEventListener` 和
-  `removeEventListener`。
+- `signal` 必须通过标准 `instanceof AbortSignal` 校验。
 - signal 校验后保持原对象 identity，不 clone、不包装。
 - 完成 payload/options 校验后立即检查预取消 signal。若已取消，返回
   `PushError('SEND_FAILED')`，以 `signal.reason` 为 cause；不得继续解析 target、渲染模板或
@@ -186,7 +181,7 @@ client.send(destination, payload, options?)
 - Zod strict schema 校验固定字段；开放 key 使用 `z.record()` 和既定 value schema。
 - 只处理 enumerable string key。
 - 不为 getter、Proxy、自定义 prototype、symbol 等非常规 Node API 输入增加专项规则或测试。
-- 校验和复制过程中抛出的异常统一按对应的稳定 pushc 配置/输入错误包装。
+- 普通输入的 schema 与业务校验失败映射为对应的稳定 pushc 配置/输入错误。
 
 ## 6. CLI 变化
 
@@ -228,23 +223,23 @@ CLI 参数不是秘密传递渠道；token/key/password 仍只能来自环境变
 
 adapter 顶层只接受 `url`、`request` 和 `response`：
 
-| 顶层字段 | 类型 | 默认值 | target 可覆盖 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | string | 无 | 否 | 必填静态可信 endpoint；配置层展开 env 后建立 origin |
-| `request` | table | 空 | 按字段覆盖 | 当前 HTTP request 配置 |
-| `response` | empty table | 空 | 空占位 | 为后续响应解析预留，本阶段不执行任何行为 |
+| 顶层字段   | 类型        | 默认值 | target 可覆盖 | 说明                                                |
+| ---------- | ----------- | ------ | ------------- | --------------------------------------------------- |
+| `url`      | string      | 无     | 否            | 必填静态可信 endpoint；配置层展开 env 后建立 origin |
+| `request`  | table       | 空     | 按字段覆盖    | 当前 HTTP request 配置                              |
+| `response` | empty table | 空     | 空占位        | 为后续响应解析预留，本阶段不执行任何行为            |
 
 adapter 与 target 的 `request` 都使用 snake_case request 字段；target 只接受
 `request`/`response` partial：
 
-| `request` 字段 | 类型 | 默认值 | target 可覆盖 | 说明 |
-| --- | --- | --- | --- | --- |
-| `url` | string | adapter 顶层 `url` | 是 | 可含 send-time 模板；最终必须同 origin |
-| `method` | string | `POST` | 是 | trim 后统一大写 |
-| `headers` | string table | 空 | 是 | 按 normalized name 合并 |
-| `content_type` | string | body 存在时 `application/json` | 是 | 只支持 JSON/text essence |
-| `timeout_ms` | integer/bigint | `10000` | 是 | 范围 `1..2_147_483_647` |
-| `body` | JSON value 或 string | 无 | 是 | 不自动生成消息结构 |
+| `request` 字段 | 类型                 | 默认值                         | target 可覆盖 | 说明                                   |
+| -------------- | -------------------- | ------------------------------ | ------------- | -------------------------------------- |
+| `url`          | string               | adapter 顶层 `url`             | 是            | 可含 send-time 模板；最终必须同 origin |
+| `method`       | string               | `POST`                         | 是            | trim 后统一大写                        |
+| `headers`      | string table         | 空                             | 是            | 按 normalized name 合并                |
+| `content_type` | string               | body 存在时 `application/json` | 是            | 只支持 JSON/text essence               |
+| `timeout_ms`   | integer              | `10000`                        | 是            | 范围 `1..2_147_483_647`                |
+| `body`         | JSON value 或 string | 无                             | 是            | 不自动生成消息结构                     |
 
 旧的顶层 request 字段及其他未知字段返回 `INVALID_CONFIG`，不提供兼容或迁移分支。
 
@@ -311,13 +306,13 @@ interface WebhookRequest {
 
 `sendTarget(target, payload, options)` 根据这三个值生成一次性的 `WebhookRequest`：
 
-1. 复制 `target.request` 的 headers/body，建立 request-local Map/JSON tree。
+1. 从 `target.request` 建立 request-local Headers/JSON tree。
 2. 用 payload 构造模板上下文并渲染 URL、header value 和 body string value。
 3. 校验最终 URL、headers、Content-Type 和 method/body 组合。
 4. 序列化 body，并将 resolved `timeout_ms` 写入 request。
 5. `sendWebhook(fetch, request, options)` 从 request 读取 timeout，组合 signal 并调用 Fetch。
 
-Map、模板中间结果和 Fetch init 都不缓存、不进入 target config，也不在不同发送之间复用。
+Headers、模板中间结果和 Fetch init 都不缓存、不进入 target config，也不在不同发送之间复用。
 
 ## 8. Adapter 与 target 合并
 
@@ -329,15 +324,15 @@ resolved request：
    - header name 按 ASCII 大小写不敏感 normalize 为小写；
    - 同一层两个原始 name normalize 后相同时返回 `INVALID_CONFIG`；
    - name/value 类型和静态 name 语法在该层解析时校验。
-3. 两层 headers 使用局部 Map 浅合并；target 同名 header 胜出，adapter 未被覆盖的 header
-   保留。resolved target 中物化为新建的 null-prototype Record。
-4. 仅当 adapter body 和 target body 都是 plain JSON object 时，使用局部 Map 按 top-level
-   key 浅合并；target 同名 key 胜出，嵌套值不递归合并。
+3. 两层 headers 使用普通 object 浅合并；target 同名 header 胜出，adapter 未被覆盖的
+   header 保留。
+4. 仅当 adapter body 和 target body 都是 plain JSON object 时，使用 object spread 按
+   top-level key 浅合并；target 同名 key 胜出，嵌套值不递归合并。
 5. 其他所有 body 组合由 target body 整体替换，包括 array、string、number、boolean、null、
    JSON primitive、text body和类型不同的组合。
 6. target 未提供 body 时继承 adapter body；两侧都未提供时 body 为 `undefined`。
-7. 字段是否存在使用 own-property presence 判断，不能使用 `??`。Node API 中显式
-   `body: null` 是合法 JSON body，必须按 target body 参与覆盖或合并判断，不能当成缺省。
+7. normalized partial 中 `undefined` 表示字段缺省；`body: null` 是合法 JSON body，必须按
+   target body 参与覆盖或合并判断，不能当成缺省。
 8. 本轮不提供删除继承 body、删除单个继承 header 或删除继承标量的语法。`headers = {}` 只
    表示没有新增 header，不会清空 adapter headers；target 缺少字段表示继承，空字符串是显式
    覆盖值而不是删除。TOML/Node input 中的 `null` 不作为 tombstone；其中 `body: null` 按上条
@@ -345,9 +340,9 @@ resolved request：
    单独设计显式 tombstone。
 
 `response` 本阶段只接受空 object，不参与合并、请求构造或 receipt 处理。具名 target 注册时
-保存合并和复制后的普通配置对象；临时 target 在 send-time 走同一合并逻辑；default 使用
-adapter 自身请求配置。`sendTarget` 每次重新复制请求数据，不依赖 target 对象不可变。一个
-adapter 可以让多个 target 指向同 origin 下的不同 endpoint。
+保存合并后的普通配置对象；临时 target 在 send-time 走同一合并逻辑；default 使用 adapter
+自身请求配置。`sendTarget` 每次从当前 resolved config 渲染独立的 Headers 与 request body。
+一个 adapter 可以让多个 target 指向同 origin 下的不同 endpoint。
 
 ## 9. 模板语言
 
@@ -370,6 +365,8 @@ adapter 可以让多个 target 指向同 origin 下的不同 endpoint。
 
 - 语义参考 Bash `${parameter:-word}`：变量缺失或值为 `''` 时使用 fallback。
 - 没有 fallback 的缺失变量渲染为 `''`。
+- `param.<key>` 的运行时查询结果只有 string 才算存在；继承到的非 string object prototype
+  成员按缺失处理，不为此重建 param record 或维护保留 key 列表。
 - expression 两端允许 ASCII whitespace，`{{ title }}` 等价于 `{{title}}`。
 - 去除 expression 外围 whitespace 后，按第一个 `:-` 分隔变量名和 fallback；变量名再次
   trim，fallback 保留剩余字面内容。`{{title:-alpha:-beta}}` 的 fallback 是
@@ -405,29 +402,22 @@ adapter 可以让多个 target 指向同 origin 下的不同 endpoint。
 - 本轮模板不自动进行 URL encoding。渲染后仍由标准 URL parser 执行原生 URL
   normalization/percent-encoding。
 
-## 10. JSON body 归一化
+## 10. JSON body 校验
 
 ### 10.1 支持值
 
 - 正常输入限定为 JSON-shaped data：null、boolean、string、finite number、array 和 object。
-- bigint 仅在 JavaScript safe integer 范围内转换为 number；其他 bigint 返回
-  `INVALID_CONFIG`。
-- replacer 遇到 undefined、symbol、function 或非 finite number 时返回 `INVALID_CONFIG`。
-- Zod preprocess 必须保留 safe-bigint 行为，不能因 schema 迁移拒绝全部 bigint。
+- 调用方负责提供上述类型；不转换 bigint，也不为 undefined、symbol、function 等越界输入
+  定义专项错误语义。
 
-### 10.2 Object、array 与特殊 key
+### 10.2 Object 与 array
 
-- JSON body 使用带 replacer 的 `JSON.stringify` 校验和标准化，再通过 `JSON.parse` 得到新的
-  data tree。
-- replacer 将 safe bigint 转为 number，并拒绝非 finite number、unsafe bigint 及其他非 JSON
-  value。
-- `__proto__`、`constructor`、`toString` 等 key 始终只是普通字符串。
+- 配置解析只校验 JSON-shaped data，不深拷贝 body。调用方在发送前修改原始 body 可能影响
+  resolved config；发送时的模板渲染从当前值建立独立的 request body。
 
 ### 10.3 Serialization failure
 
-- `JSON.stringify` 无法处理的循环或其他输入统一返回 `INVALID_CONFIG`。
-- 对 JSON-shaped data 之外的非常规 Node API 对象不定义额外兼容行为；其结果以 replacer 和
-  原生 JSON serialization 为准，抛出的异常统一包装为 `INVALID_CONFIG`。
+- 对 JSON-shaped data 之外的非常规 Node API 对象不定义额外兼容行为。
 
 ## 11. Content-Type 与 serializer
 
@@ -504,28 +494,21 @@ Request URL：
 ### 12.3 Headers
 
 - header name 必须是合法 HTTP token；value 必须是 string。
-- name normalize 为小写后存入 Map；单层 case-insensitive 重复为 `INVALID_CONFIG`。
+- name normalize 为小写后存入普通 object；单层 case-insensitive 重复为 `INVALID_CONFIG`。
 - header value 统一在 send-time 渲染后用标准 `Headers` 校验。
-- 最终 Map 转换为 tuple array 后交给 `Headers`：`new Headers([...headersMap])`。当前项目的
-  `HeadersInit` 类型不接受 `Map` 本身，因此不得把 Map 直接作为参数；也不经普通 object
-  物化。
+- request 构造时直接从 resolved header object 建立独立的标准 `Headers` instance。
 
 ### 12.4 Timeout
 
 - 默认 `10000` ms。
 - number 必须是 `1..2_147_483_647` 的整数。
-- bigint 只在同一范围内转换为 number；其他 number/bigint 返回 `INVALID_CONFIG`。
 - 上限避免 `setTimeout` overflow 后退化为近即时 timeout。
 
 ### 12.5 Runtime Web API 要求
 
 Webhook 保持 runtime-neutral，不依赖 Node API，但运行时需要标准 `URL`、`Headers`、
-`AbortController` 和 Fetch。`CreateWebhookAdapterOptions.fetch` 继续只覆盖 Fetch function。
-
-本轮只保留现有 Fetch 检查：调用 `sendTarget` 时 fetch 不可用，抛出
-`WebhookError('FETCH_UNAVAILABLE')`；直接 adapter 调用收到该错误，通过 client 调用时按普通
-发送失败包装为 `PushError('SEND_FAILED')`，CLI 使用 exit 1。`pushc targets` 不检查 Fetch，
-也不发送请求。其他 Web API global 的统一检查和错误分类不在本轮展开，留给后续错误体系专项。
+`AbortSignal` 和 Fetch。`CreateWebhookAdapterOptions.fetch` 只接受 Fetch function；不为
+缺失标准 Web API 或越过类型注入其他值的运行时提供兼容分支。
 
 ## 13. 配置期与发送期流程
 
@@ -551,8 +534,8 @@ Webhook 保持 runtime-neutral，不依赖 Node API，但运行时需要标准 `
 10. 使用已经 normalized 的 method，校验 GET/HEAD body 边界。
 11. 请求构造完成后，发送函数读取 `WebhookRequest.timeout_ms`，创建
     timeout/parent-signal 组合并发起 Fetch。timeout 只计算 Fetch 请求和响应等待时间，不包含
-    前面的同步 target 解析、模板渲染、URL/Headers 构造或 serialization。所有成功和异常出口
-    都在 `finally` 清理 timer 与 parent listener。
+    前面的同步 target 解析、模板渲染、URL/Headers 构造或 serialization。组合直接使用标准
+    `AbortSignal.timeout()` 与 `AbortSignal.any()`。
 
 ### 13.3 验证阶段
 
@@ -596,7 +579,6 @@ Webhook 保持 runtime-neutral，不依赖 Node API，但运行时需要标准 `
 class WebhookError extends Error {
   readonly code: WebhookErrorCode;
   readonly status?: number;
-  override readonly cause?: unknown;
 }
 ```
 
@@ -604,12 +586,11 @@ constructor options 同时接受 `status` 和 `cause`，并通过标准 Error ca
 
 ### 14.2 发送错误和响应
 
-- `FETCH_UNAVAILABLE`、HTTP 非 2xx、timeout、调用方取消和其他 transport error 不转换成
-  `INVALID_CONFIG`。
+- HTTP 非 2xx、timeout、调用方取消和其他 transport error 不转换成 `INVALID_CONFIG`。
 - client 继续只原样透传 `PushError`，其他发送异常按现有规则包装为 `SEND_FAILED`。
 - webhook 继续只以 `response.ok` 判断成功。
 - receipt 为 `{ status }`；响应文本等字段留给后续统一 receipt 设计。
-- timeout 和 parent signal 继续组合；listener/timer 必须可靠清理。
+- timeout 和 parent signal 通过标准组合 signal 处理。
 - 本轮不增加 retry，避免不确定失败导致重复通知。
 
 ## 15. 配置与秘密边界
@@ -639,7 +620,7 @@ constructor options 同时接受 `status` 和 `cause`，并通过标准 Error ca
 1. 在 `packages/core/package.json` 添加 Zod 直接依赖并更新 `pnpm-lock.yaml`；同步修改
    architecture 中“core 无 runtime dependency”的旧描述。不得依赖其他 workspace 的传递依赖。
 2. 替换 send public types 和 exports，新增 `INVALID_SEND_OPTIONS`。
-3. 实现 plain object、payload、destination、options 和 cross-realm signal 校验。
+3. 实现普通 object、payload、destination、options 和标准 `AbortSignal` 校验。
 4. 更新 `PushAdapter.send`、`PushClient.send`、`sendTarget` 和所有 call sites。
 5. 更新 NapCat 到新 context，并测试忽略 title/param 的既有行为。
 
@@ -654,17 +635,15 @@ constructor options 同时接受 `status` 和 `cause`，并通过标准 Error ca
 
 1. 在 `packages/adapter-webhook/package.json` 添加 Zod 直接依赖并更新 `pnpm-lock.yaml`，重写
    config/target schema，删除 `body_mode`。
-2. 使用 Zod 校验普通配置对象；通过 JSON stringify/parse 和 replacer 处理 JSON body、
-   safe-bigint 与 serialization failure。Map 只作为解析、合并和请求构造的局部数据结构。
+2. 使用 Zod 校验普通配置对象，并校验 body 为 JSON-shaped data，不在配置期深拷贝。
 3. 实现 target 全字段覆盖、header merge 和 plain-object body shallow merge。
 4. 实现单次 template scanner、默认值和单反斜杠字面量转义。
 5. 实现固定 Content-Type 输入匹配和 JSON/text serializer。
-6. 按确定阶段重组 request builder；实现 static origin、send-time final validation、Map 到
-   Headers tuple array 的边界，并在 Fetch 前启动 request timeout。
+6. 按确定阶段重组 request builder；实现 static origin、send-time final validation、标准
+   Headers 边界，并在 Fetch 前启动 request timeout。
 7. 扩展 `WebhookError.cause`；在 `parseTarget()` 和 `sendTarget()` 的配置边界完成
    `PushError('INVALID_CONFIG')` 映射，其他 native error 保持发送错误语义。
-8. 保持现有 Fetch 可用性检查、response 成功判断、timeout 和 abort 契约；receipt 简化为
-   `{ status }`。
+8. 保持 response 成功判断、timeout 和 abort 契约；receipt 简化为 `{ status }`。
 
 ### 16.5 文档与 Skill
 
@@ -682,7 +661,7 @@ constructor options 同时接受 `status` 和 `cause`，并通过标准 Error ca
 - default、具名、临时 target；未知 adapter/target；result target 字段。
 - message/title/param strict validation、未知字段和 key regex。
 - options/destination 错误码和 `INVALID_SEND_OPTIONS`。
-- cross-realm/duck-typed signal、signal identity、预取消早于 target 解析。
+- 标准 AbortSignal、signal identity、预取消早于 target 解析。
 - concrete adapter 错误包装保持现状；`PushError` 原样透传。
 
 ### 17.2 CLI
@@ -698,11 +677,9 @@ constructor options 同时接受 `status` 和 `cause`，并通过标准 Error ca
   target 首次提供 body 时默认 JSON。
 - 无 body、JSON/text body、GET/HEAD body 拒绝、method normalize 和 Fetch 禁止 method。
 - target 标量覆盖、headers case-insensitive merge/重复拒绝、body shallow merge/整体替换。
-- target 字段 own-property presence；显式 `body: null` 不被当成缺省。
+- target 显式 `body: null` 不被当成缺省。
 - 空 target headers 不清空继承 headers，缺失字段继承，null 不作为删除 tombstone。
-- header/JSON 特殊 key 经过局部 Map 和 null-prototype object，不受 object prototype 影响。
-- finite number、safe bigint、unsafe bigint、timeout bigint/范围上限。
-- unsupported JSON value 和 serialization failure。
+- finite number、timeout 整数与范围上限。
 
 ### 17.4 Template 和 URL
 
@@ -717,15 +694,13 @@ constructor options 同时接受 `status` 和 `cause`，并通过标准 Error ca
 ### 17.5 Request、错误和 lifecycle
 
 - 无 body 时省略 Fetch body/自动 Content-Type。
-- headers Map 通过 tuple array 构造 `Headers`，并保持特殊 key/value。
-- 重复发送和不同 payload 的并发发送不共享 Map、模板结果或 request init。
+- 每次请求建立独立 Headers。
+- 重复发送和不同 payload 的并发发送不共享 Headers、模板结果或 request init。
 - JSON/text serialization 和固定 Content-Type 输入。
 - 原生 normalizer/URL/Headers/serializer error 的 sanitized message、cause 和
   `INVALID_CONFIG` mapping。
 - 直接 adapter、client 和 CLI 对 send-time config error 的一致性。
-- fetch 不可用时，直接 adapter 返回 `FETCH_UNAVAILABLE`，client/CLI 按 `SEND_FAILED` 处理；
-  `pushc targets` 不检查 fetch。
-- HTTP non-2xx、timeout、parent abort、listener/timer cleanup 和 `{ status }` receipt；断言
+- HTTP non-2xx、timeout、parent abort 和 `{ status }` receipt；断言
   timeout 在 Fetch 前启动，不计算同步 request 构造时间。
 - `pushc targets` 只验证配置结构和 adapter 初始化，不发送 webhook 请求。
 

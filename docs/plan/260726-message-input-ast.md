@@ -29,22 +29,20 @@ before an adapter prepares a request.
   unmatched document params.
 - An explicit attachment `mediaType` is authoritative. NapCat only probes remote MIME types when
   the field is omitted.
-- A missing, `undefined`, or `null` raw `param` is the same as not passing params; normalization
-  omits it.
+- A missing or `undefined` raw `param` is the same as not passing params; normalization omits it.
 
 ## Technical approach
 
 `PushPayload.content` accepts a string, a string array, or a `PushContent[]`. Core converts strings
-to text nodes, prepends shortcut attachments, validates explicit nodes, copies metadata into safe
-objects, and freezes the resulting `NormalizedPushPayload`. Adapter preparation hooks receive only
-that normalized type.
+to text nodes, prepends shortcut attachments, validates explicit nodes, and validates metadata.
+Adapter preparation hooks receive only that normalized type.
 
 The CLI parses a structured document into `{ target?, payload }`. TOML/JSON `media_type` is mapped
 to the public `mediaType` property, and common attachment sources in files resolve from the message
 file directory. Literal input retains the existing title, param, and attachment CLI options.
 Structured input owns attachments. CLI target and title replace their corresponding document
 values, while CLI params override matching keys and retain unmatched document params. Param merging
-only applies key precedence and leaves final validation, copying, and freezing to core.
+only applies key precedence and leaves final validation to core.
 
 NapCat walks normalized nodes in order and prepares each attachment through its existing private
 receipt/transport split. It records the message indices of remote attachments without an explicit

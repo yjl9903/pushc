@@ -156,12 +156,10 @@ describe('resolveMessageInput', () => {
   it('allows target, title, and param overrides for structured messages', async () => {
     const root = await tempDirectory();
     const file = join(root, 'message.json');
-    const nullParamFile = join(root, 'null-param.json');
     await writeFile(
       file,
       '{"target":"qq:default","title":"message","content":"hello","param":{"group":"message","environment":"production"}}'
     );
-    await writeFile(nullParamFile, '{"content":"hello","param":null}');
 
     await expect(
       resolveMessageInput({
@@ -184,20 +182,20 @@ describe('resolveMessageInput', () => {
         message: '--attachment cannot be combined with a structured message.'
       }
     );
-    await expect(resolveMessageInput({ file: nullParamFile, target: 'qq' })).resolves.toEqual({
+  });
+
+  it('preserves TOML datetime params for core validation when CLI params are present', async () => {
+    const root = await tempDirectory();
+    const file = join(root, 'message.toml');
+    await writeFile(file, 'content = "hello"\nparam = 1979-05-27T07:32:00Z\n');
+
+    const result = await resolveMessageInput({
+      file,
       target: 'qq',
-      payload: { content: 'hello', param: null }
+      param: { group: 'cli' }
     });
-    await expect(
-      resolveMessageInput({
-        file: nullParamFile,
-        target: 'qq',
-        param: { group: 'cli' }
-      })
-    ).resolves.toEqual({
-      target: 'qq',
-      payload: { content: 'hello', param: { group: 'cli' } }
-    });
+
+    expect(result.payload.param).toBeInstanceOf(Date);
   });
 
   it('rejects source conflicts, empty input, and duplicate media type spellings', async () => {

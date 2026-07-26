@@ -2,7 +2,6 @@ import { NapCatAdapter } from '@pushc/adapter-napcat';
 import { WebhookAdapter } from '@pushc/adapter-webhook';
 import { PushClient, PushError, type AnyPushAdapter } from '@pushc/core';
 
-import { errorMessage } from './error.js';
 import {
   findConfigPath,
   loadConfig,
@@ -77,7 +76,9 @@ async function createPushClient(config: ReturnType<typeof parsePushConfig>): Pro
       }
       throw new PushError(
         'INVALID_CONFIG',
-        `Invalid configuration for adapter "${name}": ${errorMessage(error)}`,
+        `Invalid configuration for adapter "${name}": ${
+          error instanceof Error && error.message ? error.message : 'Unknown error'
+        }`,
         { cause: error }
       );
     }

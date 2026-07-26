@@ -38,7 +38,8 @@ file, and reads at most the validated size through a caller-cancellable stream. 
 decoded local attachment size, computes SHA-256 metadata, and builds two ordered message arrays.
 Only explicit `scheme://` inputs enter URL handling; HTTP(S) sources are validated and passed to
 NapCat without a download, while other schemes are rejected. Remote pathname leaves are
-percent-decoded, stripped of path separators, and rejected if they contain control characters.
+percent-decoded when possible, retain literal percent characters when decoding is not possible,
+are stripped of path separators, and are rejected if they contain control characters.
 Public remote metadata omits the full URL and query. During real dispatch, a HEAD response
 Content-Type refines the provisional pathname type and the final receipt request; failures fall back
 to the provisional type. Independent remote probes run concurrently and their results are applied

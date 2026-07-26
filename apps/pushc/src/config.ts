@@ -140,7 +140,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<LoadedConf
   return {
     path,
     config: expandEnvironment(parsed, env, redactions),
-    redactions: Object.freeze([...redactions].sort((a, b) => b.length - a.length))
+    redactions: [...redactions].sort((a, b) => b.length - a.length)
   };
 }
 
@@ -172,23 +172,23 @@ export function parsePushConfig(input: unknown): PushConfig {
         inputTarget,
         `adapters.${name}.targets.${targetName} must be a table.`
       );
-      targetEntries.push([targetName, Object.freeze({ ...target })]);
+      targetEntries.push([targetName, target]);
     }
 
     const { type, targets: _targets, ...options } = adapter;
     adapterEntries.push([
       name,
-      Object.freeze({
+      {
         type: type.trim(),
-        options: Object.freeze(options),
-        targets: Object.freeze(Object.fromEntries(targetEntries))
-      })
+        options,
+        targets: Object.fromEntries(targetEntries)
+      }
     ]);
   }
 
-  return Object.freeze({
-    adapters: Object.freeze(Object.fromEntries(adapterEntries))
-  });
+  return {
+    adapters: Object.fromEntries(adapterEntries)
+  };
 }
 
 function expandEnvironment(
@@ -228,12 +228,8 @@ function trackRedaction(redactions: Set<string>, value: string): void {
   for (const candidate of new Set([value, value.trim()])) {
     if (candidate === '') continue;
     redactions.add(candidate);
-    try {
-      redactions.add(encodeURI(candidate));
-      redactions.add(encodeURIComponent(candidate));
-    } catch {
-      // Keep the original value when malformed Unicode cannot be encoded.
-    }
+    redactions.add(encodeURI(candidate));
+    redactions.add(encodeURIComponent(candidate));
     try {
       redactions.add(new URL(candidate).toString());
     } catch {

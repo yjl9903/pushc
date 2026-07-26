@@ -78,7 +78,7 @@ function parseRemoteAttachment(input: string): URL | undefined {
 
   const scheme = /^([A-Za-z][A-Za-z\d+.-]*):/.exec(input);
   if (scheme === null || !input.slice(scheme[0].length).startsWith('//')) return undefined;
-  if (scheme[1]?.toLowerCase() !== 'http' && scheme[1]?.toLowerCase() !== 'https') {
+  if (scheme[1]!.toLowerCase() !== 'http' && scheme[1]!.toLowerCase() !== 'https') {
     throw invalidAttachment('Remote attachment URLs must use HTTP or HTTPS.');
   }
 
@@ -132,10 +132,9 @@ function remoteName(url: URL): string {
   try {
     decodedName = decodeURIComponent(encodedName);
   } catch {
-    // Keep malformed percent sequences as literal filename characters.
+    // URL permits literal percent characters that are not URI escape sequences.
   }
-
-  const name = decodedName.split(/[\\/]/).at(-1) ?? '';
+  const name = decodedName.split(/[\\/]/).at(-1)!;
   if (name === '' || name === '.' || name === '..') return 'remote-file';
   if (/[\u0000-\u001f\u007f]/.test(name)) {
     throw invalidAttachment('Remote attachment filenames must not contain control characters.');
@@ -234,8 +233,7 @@ async function readBoundedFile(
     signal
   });
 
-  for await (const chunk of stream) {
-    const contents = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+  for await (const contents of stream) {
     actualBytes += contents.byteLength;
     if (actualBytes > expectedBytes) {
       throw invalidAttachment(`Attachment "${name}" changed while it was being read.`);

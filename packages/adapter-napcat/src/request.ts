@@ -87,7 +87,7 @@ export async function prepareNapCatRequest(
   return {
     receiptRequest,
     transportRequest,
-    remoteMediaTypeProbeIndices: Object.freeze(remoteMediaTypeProbeIndices)
+    remoteMediaTypeProbeIndices
   };
 }
 
@@ -98,22 +98,16 @@ export async function updateNapCatRemoteMediaTypes(
 ): Promise<void> {
   const candidates: RemoteProbeCandidate[] = [];
   for (const index of prepared.remoteMediaTypeProbeIndices) {
-    const receiptSegment = prepared.receiptRequest.params.message[index];
-    const transportSegment = prepared.transportRequest.params.message[index];
-    if (
-      receiptSegment === undefined ||
-      receiptSegment.type === 'text' ||
-      !('encoding' in receiptSegment.data) ||
-      receiptSegment.data.encoding !== 'url' ||
-      transportSegment === undefined ||
-      transportSegment.type === 'text'
-    ) {
-      continue;
-    }
+    const receiptSegment = prepared.receiptRequest.params.message[
+      index
+    ] as NapCatAttachmentReceiptSegment;
+    const transportSegment = prepared.transportRequest.params.message[
+      index
+    ] as NapCatAttachmentTransportSegment;
     candidates.push({ index, receiptSegment, transportSegment });
   }
 
-  const updates: Array<RemoteProbeUpdate | undefined> = new Array(candidates.length);
+  const updates: RemoteProbeUpdate[] = [];
   let nextCandidate = 0;
   const probeWorker = async (): Promise<void> => {
     while (true) {
@@ -128,7 +122,7 @@ export async function updateNapCatRemoteMediaTypes(
         signal
       );
       if (mediaType !== undefined) {
-        updates[candidateIndex] = { ...candidate, mediaType };
+        updates.push({ ...candidate, mediaType });
       }
     }
   };
@@ -140,7 +134,6 @@ export async function updateNapCatRemoteMediaTypes(
   );
 
   for (const update of updates) {
-    if (update === undefined) continue;
     const { index, mediaType, receiptSegment, transportSegment } = update;
     const type = napCatAttachmentSegmentType(mediaType);
     prepared.receiptRequest.params.message[index] = {

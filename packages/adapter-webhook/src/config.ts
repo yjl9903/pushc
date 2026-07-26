@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 import { WebhookError } from './error.js';
-import { cloneJson, isJsonObject, toNullPrototypeJson } from './utils/json.js';
-import { emptyRecord, isRecord, recordFromMap } from './utils/record.js';
+import { isJsonObject, isJsonValue } from './utils/json.js';
+import { isRecord } from './utils/record.js';
 import type {
   JsonValue,
   WebhookConfig,
@@ -14,16 +14,12 @@ import type {
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const CONFIG_FIELDS = new Set(['url', 'request', 'response']);
-const TARGET_FIELDS = new Set(['request', 'response']);
-const REQUEST_FIELDS = new Set(['url', 'method', 'headers', 'content_type', 'timeout_ms', 'body']);
-
 const requestSchema = z.strictObject({
   url: z.string().optional(),
   method: z.string().optional(),
   headers: z.unknown().optional(),
   content_type: z.string().optional(),
-  timeout_ms: z.union([z.number(), z.bigint()]).optional(),
+  timeout_ms: z.number().optional(),
   body: z.unknown().optional()
 });
 
@@ -59,23 +55,14 @@ export interface ParsedContentType {
 
 export function parseWebhookConfig(input: unknown): WebhookConfig {
   try {
-    if (!isRecord(input)) throw invalidConfig();
-    assertAllowedFields(input, CONFIG_FIELDS);
     const result = configSchema.safeParse(input);
     if (!result.success) throw invalidConfig(result.error);
-    if (
-      (Object.hasOwn(input, 'request') && input.request === undefined) ||
-      (Object.hasOwn(input, 'response') && input.response === undefined)
-    ) {
-      throw invalidConfig();
-    }
-
     const url = parseAdapterUrl(result.data.url);
     const request = resolveWebhookRequest(
       {
         url,
         method: 'POST',
-        headers: emptyRecord(),
+        headers: {},
         timeout_ms: DEFAULT_TIMEOUT_MS
       },
       parseWebhookRequestInput(result.data.request ?? {})
@@ -92,44 +79,26 @@ export function parseWebhookConfig(input: unknown): WebhookConfig {
 }
 
 export function parseWebhookTargetPartial(input: unknown): ParsedWebhookTargetPartial {
-  try {
-    if (!isRecord(input)) throw invalidConfig();
-    assertAllowedFields(input, TARGET_FIELDS);
-    const result = targetSchema.safeParse(input);
-    if (!result.success) throw invalidConfig(result.error);
-    if (
-      (Object.hasOwn(input, 'request') && input.request === undefined) ||
-      (Object.hasOwn(input, 'response') && input.response === undefined)
-    ) {
-      throw invalidConfig();
-    }
-    return {
-      ...(result.data.request === undefined
-        ? {}
-        : { request: parseWebhookRequestInput(result.data.request) }),
-      ...(result.data.response === undefined
-        ? {}
-        : { response: parseWebhookResponse(result.data.response) })
-    };
-  } catch (cause) {
-    if (cause instanceof WebhookError) throw cause;
-    throw invalidConfig(cause);
-  }
+  const result = targetSchema.safeParse(input);
+  if (!result.success) throw invalidConfig(result.error);
+  return {
+    ...(result.data.request === undefined
+      ? {}
+      : { request: parseWebhookRequestInput(result.data.request) }),
+    ...(result.data.response === undefined
+      ? {}
+      : { response: parseWebhookResponse(result.data.response) })
+  };
 }
 
 export function resolveWebhookTarget(
   base: WebhookConfig,
   partial: ParsedWebhookTargetPartial
 ): WebhookTargetConfig {
-  try {
-    return {
-      request: resolveWebhookRequest(base.request, partial.request ?? {}),
-      response: {}
-    };
-  } catch (cause) {
-    if (cause instanceof WebhookError) throw cause;
-    throw invalidConfig(cause);
-  }
+  return {
+    request: resolveWebhookRequest(base.request, partial.request ?? {}),
+    response: {}
+  };
 }
 
 export function parseContentType(input: string): ParsedContentType {
@@ -151,38 +120,24 @@ export function invalidConfig(cause?: unknown): WebhookError {
 }
 
 function parseWebhookRequestInput(input: unknown): ParsedWebhookRequestPartial {
-  try {
-    if (!isRecord(input)) throw invalidConfig();
-    assertAllowedFields(input, REQUEST_FIELDS);
-    const result = requestSchema.safeParse(input);
-    if (!result.success) throw invalidConfig(result.error);
-    if (Object.hasOwn(input, 'body') && input.body === undefined) {
-      throw invalidConfig();
-    }
-    return {
-      ...(result.data.url === undefined ? {} : { url: result.data.url }),
-      ...(result.data.method === undefined ? {} : { method: parseMethod(result.data.method) }),
-      ...(result.data.headers === undefined ? {} : { headers: parseHeaders(result.data.headers) }),
-      ...(result.data.content_type === undefined
-        ? {}
-        : { content_type: parseContentType(result.data.content_type).value }),
-      ...(result.data.timeout_ms === undefined
-        ? {}
-        : { timeout_ms: parseTimeout(result.data.timeout_ms) }),
-      ...(Object.hasOwn(input, 'body') ? { body: normalizeJsonBody(input.body) } : {})
-    };
-  } catch (cause) {
-    if (cause instanceof WebhookError) throw cause;
-    throw invalidConfig(cause);
-  }
+  const result = requestSchema.safeParse(input);
+  if (!result.success) throw invalidConfig(result.error);
+  return {
+    ...(result.data.url === undefined ? {} : { url: result.data.url }),
+    ...(result.data.method === undefined ? {} : { method: parseMethod(result.data.method) }),
+    ...(result.data.headers === undefined ? {} : { headers: parseHeaders(result.data.headers) }),
+    ...(result.data.content_type === undefined
+      ? {}
+      : { content_type: parseContentType(result.data.content_type).value }),
+    ...(result.data.timeout_ms === undefined
+      ? {}
+      : { timeout_ms: parseTimeout(result.data.timeout_ms) }),
+    ...(result.data.body === undefined ? {} : { body: normalizeJsonBody(result.data.body) })
+  };
 }
 
 function parseWebhookResponse(input: unknown): WebhookResponseConfig {
-  if (!isRecord(input)) throw invalidConfig();
-  const prototype = Object.getPrototypeOf(input);
-  if ((prototype !== Object.prototype && prototype !== null) || Reflect.ownKeys(input).length > 0) {
-    throw invalidConfig();
-  }
+  if (!isRecord(input) || Object.keys(input).length > 0) throw invalidConfig();
   return {};
 }
 
@@ -191,9 +146,7 @@ function resolveWebhookRequest(
   partial: ParsedWebhookRequestPartial
 ): WebhookRequestConfig {
   const body = mergeBody(base, partial);
-  const contentType = Object.hasOwn(partial, 'content_type')
-    ? partial.content_type
-    : base.content_type;
+  const contentType = partial.content_type ?? base.content_type;
   const resolved: WebhookRequestConfig = {
     url: partial.url ?? base.url,
     method: partial.method ?? base.method,
@@ -220,20 +173,15 @@ function resolveWebhookRequest(
 
 function parseAdapterUrl(input: string): string {
   if (input.includes('{{')) throw invalidConfig();
-  try {
-    const url = new URL(input);
-    if (
-      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
-      url.username !== '' ||
-      url.password !== ''
-    ) {
-      throw invalidConfig();
-    }
-    return url.toString();
-  } catch (cause) {
-    if (cause instanceof WebhookError) throw cause;
-    throw invalidConfig(cause);
+  const url = new URL(input);
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.username !== '' ||
+    url.password !== ''
+  ) {
+    throw invalidConfig();
   }
+  return url.toString();
 }
 
 function parseMethod(input: string): string {
@@ -255,90 +203,51 @@ function validateMethodBody(method: string, body: JsonValue | undefined): void {
   }
 }
 
-function parseTimeout(input: number | bigint): number {
-  const value = typeof input === 'bigint' ? Number(input) : input;
-  if (
-    !Number.isInteger(value) ||
-    value < 1 ||
-    value > MAX_TIMEOUT_MS ||
-    (typeof input === 'bigint' && BigInt(value) !== input)
-  ) {
+function parseTimeout(input: number): number {
+  if (!Number.isInteger(input) || input < 1 || input > MAX_TIMEOUT_MS) {
     throw invalidConfig();
   }
-  return value;
+  return input;
 }
 
 function parseHeaders(input: unknown): Readonly<Record<string, string>> {
   if (!isRecord(input)) throw invalidConfig();
-  const headers = new Map<string, string>();
+  const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(input)) {
     const normalizedName = name.toLowerCase();
     if (
       !HTTP_TOKEN_PATTERN.test(name) ||
       typeof value !== 'string' ||
-      headers.has(normalizedName)
+      headers[normalizedName] !== undefined
     ) {
       throw invalidConfig();
     }
-    headers.set(normalizedName, value);
+    headers[normalizedName] = value;
   }
-  return recordFromMap(headers);
+  return headers;
 }
 
 function mergeHeaders(
   base: Readonly<Record<string, string>>,
   partial?: Readonly<Record<string, string>>
 ): Readonly<Record<string, string>> {
-  const headers = new Map(Object.entries(base));
-  for (const entry of Object.entries(partial ?? {})) headers.set(...entry);
-  return recordFromMap(headers);
+  return { ...base, ...partial };
 }
 
 function mergeBody(
   base: WebhookRequestConfig,
   partial: ParsedWebhookRequestPartial
 ): JsonValue | undefined {
-  if (!Object.hasOwn(partial, 'body')) {
-    return base.body === undefined ? undefined : cloneJson(base.body);
+  if (partial.body === undefined) {
+    return base.body;
   }
   if (isJsonObject(base.body) && isJsonObject(partial.body)) {
-    const values = new Map<string, JsonValue>(Object.entries(base.body));
-    for (const entry of Object.entries(partial.body)) values.set(...entry);
-    return recordFromMap(values);
+    return { ...base.body, ...partial.body };
   }
-  return partial.body === undefined ? undefined : cloneJson(partial.body);
+  return partial.body;
 }
 
 function normalizeJsonBody(input: unknown): JsonValue {
-  try {
-    const serialized = JSON.stringify(input, (_key, value: unknown) => {
-      if (typeof value === 'bigint') {
-        if (value < BigInt(Number.MIN_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER)) {
-          throw invalidConfig();
-        }
-        return Number(value);
-      }
-      if (
-        value === undefined ||
-        typeof value === 'symbol' ||
-        typeof value === 'function' ||
-        (typeof value === 'number' && !Number.isFinite(value))
-      ) {
-        throw invalidConfig();
-      }
-      return value;
-    });
-    if (serialized === undefined) throw invalidConfig();
-    return toNullPrototypeJson(JSON.parse(serialized) as JsonValue);
-  } catch (cause) {
-    if (cause instanceof WebhookError) throw cause;
-    throw invalidConfig(cause);
-  }
-}
-
-function assertAllowedFields(
-  input: Readonly<Record<string, unknown>>,
-  allowed: ReadonlySet<string>
-): void {
-  if (Object.keys(input).some((key) => !allowed.has(key))) throw invalidConfig();
+  if (!isJsonValue(input)) throw invalidConfig();
+  return input;
 }

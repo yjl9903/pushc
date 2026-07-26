@@ -69,32 +69,13 @@ describe('parseParamEntries', () => {
     });
     expect(payload.param).toEqual({ group: 'message', environment: 'production' });
     expect(applyParamOverrides(payload, undefined)).toBe(payload);
-    expect(applyParamOverrides({ content: 'release', param: null }, { group: 'cli' })).toEqual({
-      content: 'release',
-      param: { group: 'cli' }
-    });
   });
 
-  it('merges plain record params before core validation', () => {
-    const payload = {
-      content: 'release',
-      param: { group: 1, unchanged: false }
-    } as unknown as PushPayload;
+  it('preserves invalid message params for core validation', () => {
+    const invalidParams = ['bad', new Date('1979-05-27T07:32:00Z')];
 
-    expect(applyParamOverrides(payload, { group: 'cli' })).toEqual({
-      content: 'release',
-      param: { group: 'cli', unchanged: false }
-    });
-  });
-
-  it('leaves non-plain message params unchanged for core validation', () => {
-    const invalidPayloads = [
-      { content: 'release', param: 'bad' },
-      { content: 'release', param: ['bad'] },
-      { content: 'release', param: new Date(0) }
-    ] as unknown as PushPayload[];
-
-    for (const payload of invalidPayloads) {
+    for (const param of invalidParams) {
+      const payload = { content: 'release', param } as unknown as PushPayload;
       expect(applyParamOverrides(payload, { group: 'cli' })).toBe(payload);
     }
   });

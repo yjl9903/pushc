@@ -51,11 +51,10 @@ function rejectUnknownFields(value: Record<string, unknown>): void {
 
 function positiveInteger(input: unknown, path: string, fallback: number): number {
   if (input === undefined) return fallback;
-  const value = typeof input === 'bigint' ? Number(input) : input;
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+  if (typeof input !== 'number' || !Number.isSafeInteger(input) || input <= 0) {
     throw new NapCatError('INVALID_CONFIG', `${path} must be a positive integer.`);
   }
-  return value;
+  return input;
 }
 
 function requiredString(input: unknown, path: string): string {

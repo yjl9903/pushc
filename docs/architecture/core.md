@@ -24,7 +24,7 @@ interface PushPayload {
   readonly content: string | readonly string[] | readonly PushContent[];
   readonly attachments?: readonly string[];
   readonly title?: string;
-  readonly param?: Readonly<Record<string, string>> | null;
+  readonly param?: Readonly<Record<string, string>>;
 }
 
 interface NormalizedPushPayload {
@@ -48,33 +48,30 @@ adapter 使用 `send(target, payload, options?)`；client 使用
 object。
 
 payload 为 strict object。`content` 必填，接受 string、纯 string array 或纯
-`PushContent` array；两种 array 都必须是没有空槽的稠密数组。string 转成一个 text node，
-string array 逐项转成 text node；
+`PushContent` array。string 转成一个 text node，string array 逐项转成 text node；
 `attachments` 只允许与快捷输入组合，并按输入顺序转成 attachment nodes 后排列在 text nodes
-之前，且自身也必须是稠密数组；缺省或为 `undefined` 都表示未提供。显式 AST 保持顺序，只要
-提供非 `undefined` 的 `attachments` 字段即非法；空 content array 只有在 shortcut
-attachments 非空时合法。混合 string/object array、未知 node 字段和 `<adapter>:<node>` 等
-未实现 node type 均为 `INVALID_MESSAGE`。
-
-node 的 type 与对应必填字段必须是自身属性；继承字段不参与解析。text 保存原字符串；整个
-消息必须至少包含一个 trim 后非空的 text 或 attachment。attachment source trim 后
-非空，可选 name trim 后非空，可选 mediaType 必须是 `type/subtype`。`title` 为可选 string，
-空 string 合法；原始 `param` 缺省、为 `undefined` 或为 `null` 都表示未传，normalize 后不
-保留该字段。非 nullish `param` 必须是 plain object，value 全部为 string，key 匹配
-`[A-Za-z0-9][A-Za-z0-9_.-]*`。归一化后的 param 是冻结的 null-prototype copy。node、content
-array、param 与 normalized payload 都是冻结 copy；调用方引用不会进入 adapter。payload
-错误为 `INVALID_MESSAGE`。
-
-`src/content.ts` 专门负责消息内容结构：展开快捷 attachments、保留 AST 顺序、严格校验公共
-node 字段、判断有效内容并冻结 node 与 content array。`src/validation.ts` 只负责 payload
-外层元数据、send options 和公共错误边界，把内容处理失败统一转换为
+之前；缺省或为 `undefined` 都表示未提供。显式 AST 保持顺序，只要提供非 `undefined` 的
+`attachments` 字段即非法；空 content array 只有在 shortcut attachments 非空时合法。混合
+string/object array、未知 node 字段和 `<adapter>:<node>` 等未实现 node type 均为
 `INVALID_MESSAGE`。
 
-options 为 strict object。signal 使用 runtime-neutral shape guard 校验 `aborted`、
-`addEventListener` 和 `removeEventListener`，保持原 identity；options 错误为
-`INVALID_SEND_OPTIONS`。`dryRun` 为可选 boolean；为 `true` 时只准备最终 request，不执行平台
-传输。payload/options 校验后立即检查预取消 signal，失败为 `SEND_FAILED`，且不得继续解析
-target。
+text 保存原字符串；整个消息必须至少包含一个 trim 后非空的 text 或 attachment。attachment
+source trim 后非空，可选 name trim 后非空，可选 mediaType 必须是 `type/subtype`。`title`
+为可选 string，空 string 合法；原始 `param` 缺省或为 `undefined` 表示未传，normalize 后不
+保留该字段。非 `undefined` 的 `param` 必须是 plain object，value 全部为 string，key
+匹配 `[A-Za-z0-9][A-Za-z0-9_.-]*`。node、content array 与 normalized payload 由 core
+重新构造；调用方的 content array 和 node 引用不会进入 adapter。
+payload 错误为 `INVALID_MESSAGE`。非常规 JavaScript object、array 和与 object prototype
+成员冲突的动态 key 遵循系统架构定义的运行时输入边界，不增加专项兼容逻辑。
+
+`src/content.ts` 专门负责消息内容结构：展开快捷 attachments、保留 AST 顺序、严格校验公共
+node 字段、判断有效内容并构造 normalized node 与 content array。`src/validation.ts` 只负责
+payload 外层元数据和 send options；两者都通过 strict schema 直接形成公共错误。
+
+options 为 strict object。signal 必须是标准 `AbortSignal` instance，并保持原 identity；
+options 错误为 `INVALID_SEND_OPTIONS`。`dryRun` 为可选 boolean；为 `true` 时只准备最终
+request，不执行平台传输。payload/options 校验后立即检查预取消 signal，失败为
+`SEND_FAILED`，且不得继续解析 target。
 
 ## Adapter 与 Target 契约
 
@@ -100,7 +97,7 @@ protected abstract dispatchRequest(
 ): Promise<PushDispatchResult<TReceiptRequest, TReceiptResponse>>;
 ```
 
-`prepareRequest` 接收 resolved target、normalized AST payload 与只含调用方 signal 的冻结
+`prepareRequest` 接收 resolved target、normalized AST payload 与只含调用方 signal 的
 options。它可以异步访问本地资源，但不得连接、上传、Fetch 或访问目标服务。
 `receiptRequest` 是公开、可序列化的 receipt 投影；`transportRequest` 是内部平台请求，
 core 不返回或记录它。`dispatchRequest` 接收完整 preparation result，是唯一允许目标服务

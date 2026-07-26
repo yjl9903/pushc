@@ -5,10 +5,8 @@ const TARGET_FIELDS = new Set(['user_id', 'group_id']);
 
 export function napCatTargetDefaults(input: unknown): Readonly<Record<string, unknown>> {
   if (!isRecord(input)) return {};
-  return Object.freeze(
-    Object.fromEntries(
-      [...TARGET_FIELDS].filter((field) => field in input).map((field) => [field, input[field]])
-    )
+  return Object.fromEntries(
+    [...TARGET_FIELDS].filter((field) => field in input).map((field) => [field, input[field]])
   );
 }
 
@@ -43,7 +41,7 @@ function rejectUnknownTargetFields(value: Record<string, unknown>): void {
 }
 
 function idString(input: unknown, path: string): string {
-  const value = typeof input === 'bigint' || typeof input === 'number' ? String(input) : input;
+  const value = typeof input === 'number' ? String(input) : input;
   if (typeof value !== 'string' || !/^\d+$/.test(value)) {
     throw new NapCatError('INVALID_CONFIG', `${path} must contain only decimal digits.`);
   }

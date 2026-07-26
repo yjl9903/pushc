@@ -14,14 +14,10 @@ export type PushErrorCode =
 
 export class PushError extends Error {
   readonly code: PushErrorCode;
-  override readonly cause?: unknown;
 
   constructor(code: PushErrorCode, message: string, options: { cause?: unknown } = {}) {
-    super(message);
+    super(message, { cause: options.cause });
     this.name = 'PushError';
     this.code = code;
-    if (Object.hasOwn(options, 'cause')) {
-      this.cause = options.cause;
-    }
   }
 }

@@ -213,7 +213,8 @@ describe('PushTargets', () => {
 });
 
 describe('send boundaries', () => {
-  it.each([0, false, '', null])('preserves falsy PushError causes %#', (cause) => {
+  it('preserves PushError causes', () => {
+    const cause = new Error('root cause');
     const error = new PushError('SEND_FAILED', 'failed', { cause });
     expect(error.cause).toBe(cause);
   });
@@ -282,15 +283,11 @@ describe('send boundaries', () => {
     `);
   });
 
-  it('copies payload safely and preserves signal identity', async () => {
+  it('normalizes payload without retaining input arrays and preserves signal identity', async () => {
     const adapter = new MemoryAdapter();
-    const param = { constructor: 'safe', key: 'value' };
+    const param = { channel: 'ops', key: 'value' };
     const attachments = ['photo.png', 'report.pdf'];
-    const signal = {
-      aborted: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn()
-    } as unknown as AbortSignal;
+    const signal = new AbortController().signal;
 
     await adapter.send(
       undefined,
@@ -305,30 +302,23 @@ describe('send boundaries', () => {
       { type: 'attachment', source: 'report.pdf' },
       { type: 'text', text: ' hello ' }
     ]);
-    expect(context.payload.content.every(Object.isFrozen)).toBe(true);
-    expect(Object.isFrozen(context.payload.content)).toBe(true);
     expect(context.payload.title).toBe('');
     expect(context.payload.param).toMatchInlineSnapshot(`
       {
-        "constructor": "safe",
+        "channel": "ops",
         "key": "value",
       }
     `);
-    expect(Object.getPrototypeOf(context.payload.param)).toBeNull();
-    expect(Object.isFrozen(context.payload.param)).toBe(true);
     expect(context.options.signal).toBe(signal);
     expect(context.options).not.toHaveProperty('dryRun');
-    expect(Object.isFrozen(context.options)).toBe(true);
   });
 
-  it('treats nullish params as omitted', async () => {
+  it('treats undefined params as omitted', async () => {
     const adapter = new MemoryAdapter();
 
-    await adapter.send(undefined, { content: 'null', param: null });
     await adapter.send(undefined, { content: 'undefined', param: undefined });
 
     expect(adapter.contexts[0]?.payload).not.toHaveProperty('param');
-    expect(adapter.contexts[1]?.payload).not.toHaveProperty('param');
   });
 
   it('normalizes string arrays and preserves explicit AST order', async () => {
@@ -362,7 +352,6 @@ describe('send boundaries', () => {
       },
       { type: 'text', text: 'after' }
     ]);
-    expect(adapter.contexts[1]?.payload.content.every(Object.isFrozen)).toBe(true);
   });
 
   it.each([
@@ -373,12 +362,11 @@ describe('send boundaries', () => {
     [{ content: '', attachments: [1] }],
     [{ content: 1 }],
     [{ content: 'ok', title: null }],
+    [{ content: 'ok', param: 'bad' }],
     [{ content: 'ok', param: [] }],
     [{ content: 'ok', param: { bad: 1 } }],
     [{ content: 'ok', param: { 'bad key': 'value' } }],
     [{ content: 'ok', unknown: true }],
-    [JSON.parse('{"content":"ok","__proto__":true}')],
-    [{ content: 'ok', param: JSON.parse('{"__proto__":"value"}') }],
     [{ content: ['ok', { type: 'text', text: 'mixed' }] }],
     [{ content: [{ type: 'napcat:at', qq: 'all' }] }],
     [{ content: [{ type: 'attachment', source: '' }] }],
@@ -389,47 +377,6 @@ describe('send boundaries', () => {
       success: false,
       error: { code: 'INVALID_MESSAGE' }
     });
-  });
-
-  it('rejects sparse content and attachment arrays before adapter preparation', async () => {
-    const sparseContent = new Array(2);
-    sparseContent[1] = { type: 'attachment', source: 'photo.png' };
-    const sparseAttachments = new Array(2);
-    sparseAttachments[0] = 'photo.png';
-
-    for (const payload of [
-      { content: sparseContent },
-      { content: 'caption', attachments: sparseAttachments }
-    ]) {
-      const adapter = new MemoryAdapter();
-      await expect(adapter.send(undefined, payload as never)).resolves.toMatchObject({
-        success: false,
-        error: { code: 'INVALID_MESSAGE' }
-      });
-      expect(adapter.parse).not.toHaveBeenCalled();
-      expect(adapter.contexts).toHaveLength(0);
-    }
-  });
-
-  it('rejects inherited required node fields before adapter preparation', async () => {
-    const inheritedNode = Object.create({
-      type: 'attachment',
-      source: 'package.json',
-      name: 'leak.json'
-    });
-    const inheritedSource = Object.assign(Object.create({ source: 'package.json' }), {
-      type: 'attachment'
-    });
-
-    for (const content of [[inheritedNode], [inheritedSource]]) {
-      const adapter = new MemoryAdapter();
-      await expect(adapter.send(undefined, { content } as never)).resolves.toMatchObject({
-        success: false,
-        error: { code: 'INVALID_MESSAGE' }
-      });
-      expect(adapter.parse).not.toHaveBeenCalled();
-      expect(adapter.contexts).toHaveLength(0);
-    }
   });
 
   it('treats undefined attachments as omitted', async () => {
@@ -478,21 +425,16 @@ describe('send boundaries', () => {
       adapter.send(undefined, { content: 'ok' }, { unknown: true } as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
     await expect(
-      adapter.send(undefined, { content: 'ok' }, JSON.parse('{"__proto__":true}') as never)
-    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
-    await expect(
       adapter.send(undefined, { content: 'ok' }, { dryRun: 'true' } as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
 
     const reason = new Error('cancelled');
-    const signal = {
-      aborted: true,
-      reason,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn()
-    } as unknown as AbortSignal;
+    const controller = new AbortController();
+    controller.abort(reason);
     adapter.parse.mockClear();
-    await expect(adapter.send(undefined, { content: 'ok' }, { signal })).resolves.toMatchObject({
+    await expect(
+      adapter.send(undefined, { content: 'ok' }, { signal: controller.signal })
+    ).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: 'Message sending was aborted.' }
     });
@@ -586,7 +528,7 @@ describe('send boundaries', () => {
       }
     });
 
-    const failure = { message: 'offline', status: 503 };
+    const failure = new Error('offline');
     const adapter = new MemoryAdapter(
       '#',
       {},
@@ -600,7 +542,7 @@ describe('send boundaries', () => {
       success: false,
       adapter: 'memory',
       target: 'ops',
-      error: { code: 'SEND_FAILED' }
+      error: { code: 'SEND_FAILED', message: 'offline' }
     });
   });
 
@@ -839,14 +781,15 @@ describe('adapter registry lifecycle', () => {
       error: { code: 'CLIENT_DESTROYED' }
     });
 
+    const destroyError = new Error('failed');
     const failing = new PushClient();
     failing.adapters.register(
       'memory',
-      new MemoryAdapter('#', {}, { destroy: async () => Promise.reject('failed') })
+      new MemoryAdapter('#', {}, { destroy: async () => Promise.reject(destroyError) })
     );
     await expect(failing.destroy()).rejects.toMatchObject({
       code: 'DESTROY_FAILED',
-      cause: 'failed'
+      cause: destroyError
     });
   });
 });

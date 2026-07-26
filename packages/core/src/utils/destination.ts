@@ -47,25 +47,20 @@ export function normalizeDestination(input: PushDestination): NormalizedDestinat
         'Destinations must be an adapter name or adapter:target using only letters, digits, _ or -.'
       );
     }
-    return Object.freeze({
+    return {
       adapter: parts[0],
       ...(parts[1] === undefined ? {} : { target: parts[1] })
-    });
+    };
   }
 
-  try {
-    const result = destinationSchema.safeParse(input);
-    if (!result.success) {
-      throw new PushError('INVALID_TARGET', 'Invalid push destination.', {
-        cause: result.error
-      });
-    }
-    return Object.freeze({
-      adapter: result.data.adapter,
-      ...(result.data.target === undefined ? {} : { target: result.data.target })
+  const result = destinationSchema.safeParse(input);
+  if (!result.success) {
+    throw new PushError('INVALID_TARGET', 'Invalid push destination.', {
+      cause: result.error
     });
-  } catch (cause) {
-    if (cause instanceof PushError) throw cause;
-    throw new PushError('INVALID_TARGET', 'Invalid push destination.', { cause });
   }
+  return {
+    adapter: result.data.adapter,
+    ...(result.data.target === undefined ? {} : { target: result.data.target })
+  };
 }

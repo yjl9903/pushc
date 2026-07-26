@@ -158,6 +158,27 @@ describe('makePushRuntime', () => {
     await client.destroy();
   });
 
+  it.each([
+    ['body', '[adapters.webhook.request]\nbody = 1979-05-27T07:32:00Z'],
+    ['nested body value', '[adapters.webhook.request]\nbody = { sent_at = 1979-05-27T07:32:00Z }'],
+    ['headers', '[adapters.webhook.request]\nheaders = 1979-05-27T07:32:00Z'],
+    ['response', 'response = 1979-05-27T07:32:00Z']
+  ])('rejects a TOML datetime used as webhook %s', async (_field, fieldConfig) => {
+    const root = await tempDirectory();
+    const config = join(root, 'config.toml');
+    await writeFile(
+      config,
+      ['[adapters.webhook]', 'type = "webhook"', 'url = "https://example.com"', fieldConfig].join(
+        '\n'
+      )
+    );
+
+    await expect(makePushRuntime({ config })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_CONFIG' }
+    });
+  });
+
   it('reports unsupported implementations, constructor failures and invalid defaults', async () => {
     const root = await tempDirectory();
     const config = join(root, 'config.toml');

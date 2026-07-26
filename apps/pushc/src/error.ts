@@ -8,13 +8,11 @@ export type ConfigErrorCode =
 
 export class ConfigError extends Error {
   readonly code: ConfigErrorCode;
-  override readonly cause?: unknown;
 
   constructor(code: ConfigErrorCode, message: string, options: { cause?: unknown } = {}) {
-    super(message);
+    super(message, { cause: options.cause });
     this.name = 'ConfigError';
     this.code = code;
-    this.cause = options.cause;
   }
 }
 
@@ -23,13 +21,11 @@ export type MessageInputErrorCode =
 
 export class MessageInputError extends Error {
   readonly code: MessageInputErrorCode;
-  override readonly cause?: unknown;
 
   constructor(code: MessageInputErrorCode, message: string, options: { cause?: unknown } = {}) {
-    super(message);
+    super(message, { cause: options.cause });
     this.name = 'MessageInputError';
     this.code = code;
-    this.cause = options.cause;
   }
 }
 
@@ -57,14 +53,12 @@ export type CliContext = ReturnType<Breadc['parse']>['context'];
 export class CliError extends Error {
   readonly ctx: CliContext;
   readonly redactions: readonly string[];
-  override readonly cause: unknown;
 
   constructor(cause: unknown, ctx: CliContext, redactions: readonly string[] = []) {
-    super(normalizeError(cause).message);
+    super(normalizeError(cause).message, { cause });
     this.name = 'CliError';
     this.ctx = ctx;
     this.redactions = redactions;
-    this.cause = cause;
   }
 }
 
@@ -96,10 +90,6 @@ export function normalizeError(error: unknown): NormalizedError {
     code: 'INTERNAL_ERROR',
     message: error instanceof Error && error.message ? error.message : 'Unknown error'
   };
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : 'Unknown error';
 }
 
 export function getErrorExitCode(error: unknown): number {

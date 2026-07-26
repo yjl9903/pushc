@@ -816,7 +816,7 @@ describe('napcat adapter', () => {
     }
   });
 
-  it('normalizes decoded remote basenames and rejects control characters', async () => {
+  it('normalizes remote basenames and rejects control characters', async () => {
     const factory = vi.fn(() => mockClient());
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
 
@@ -839,6 +839,29 @@ describe('napcat adapter', () => {
             user_id: 123,
             message: [
               remoteAttachmentReceipt('file', 'report.pdf', 'application/pdf', 'files.example.com'),
+              { type: 'text', data: { text: '' } }
+            ]
+          }
+        }
+      }
+    });
+
+    await expect(
+      adapter.send(
+        { user_id: '123' },
+        { content: '', attachments: ['https://files.example.com/100%.pdf'] },
+        { dryRun: true }
+      )
+    ).resolves.toEqual({
+      dryRun: true,
+      success: true,
+      receipt: {
+        request: {
+          method: 'send_msg',
+          params: {
+            user_id: 123,
+            message: [
+              remoteAttachmentReceipt('file', '100%.pdf', 'application/pdf', 'files.example.com'),
               { type: 'text', data: { text: '' } }
             ]
           }
