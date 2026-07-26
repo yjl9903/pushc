@@ -1,6 +1,6 @@
 ---
 name: pushc
-description: Send messages and notifications with the pushc CLI. Use when the user asks to push or send a notification with pushc.
+description: Use when the user asks to configure pushc or send a notification with pushc.
 metadata:
   author: OneKuma
   version: '0.0.0'
@@ -17,12 +17,9 @@ other operations, configure only when necessary, and never expose credentials in
 2. If it is unavailable, verify Node.js 24 or newer with `node --version`, then ask before installing
    the npm-distributed CLI globally with `npm install -g pushc`. Do not silently change the user's
    global environment.
-3. Run `pushc --version` and report the detected version. If the command fails, diagnose the Node.js
-   and npm installation before proceeding. Do not require a particular pushc version unless the task
-   names one.
-4. Run `pushc targets --json` (plus `--config <path>` when the user supplied a config) to validate
+3. Run `pushc targets --json` (plus `--config <path>` when the user supplied a config) to validate
    the configuration and discover usable destinations. This does not test platform connectivity.
-5. If pushc reports that no config exists, stop the preflight and read
+4. If pushc reports that no config exists, stop the preflight and read
    [reference/configuration.md](reference/configuration.md) completely before helping the user
    create one. If a config exists but is invalid, use the same reference to diagnose it. Never send a
    test notification unless the user asks for one.
@@ -36,14 +33,14 @@ credential.
 
 ### `pushc targets`
 
-Prerequisite: finish the preflight and ensure a configuration exists. Use this command to validate
-the configuration and list available destinations before sending.
+Use this command to validate the configuration and list available destinations:
 
 ```bash
 pushc targets --json
 ```
 
-Add `--config <path>` only when the user supplies or selects a non-default config.
+The preflight already runs it, so reuse that result unless the configuration changes. Add
+`--config <path>` only when the user supplies or selects a non-default config.
 
 ### `pushc send`
 
@@ -51,14 +48,18 @@ Prerequisite: know the intended destination from `pushc targets` and have non-em
 or at least one attachment. For a real send, also require user intent to perform the external side
 effect.
 
+Not every adapter supports or uses every message capability. Before using `title`, `param`, or
+attachments, read the selected adapter's reference.
+
 Send a basic message:
 
 ```bash
 pushc send --target alerts:release "Build completed"
 ```
 
-Always pass `--target <adapter[:target]>`. A destination without a colon selects that adapter's
-default target and does not select its sole named target.
+Pass `--target <adapter[:target]>` unless a structured message file supplies its default target.
+CLI `--target` overrides the `target` declared in that file. A destination without a colon selects
+that adapter's default target and does not select its sole named target.
 
 Add `--title` when the configured destination uses a title. Do not use titles to pass secrets:
 
@@ -67,7 +68,8 @@ pushc send --target alerts:release --title "Build completed" "Production deploym
 ```
 
 Add string extension parameters with `--param key=value` when the configured destination uses them.
-Repeat the complete option for every entry, and do not use params to pass secrets:
+These override matching params in a structured message file. Repeat the complete option for every
+entry, and do not use params to pass secrets:
 
 ```bash
 pushc send --target alerts:release \
@@ -77,8 +79,7 @@ pushc send --target alerts:release \
 ```
 
 When the selected destination supports attachments, repeat the complete `--attachment <source>`
-option for every source. Read the selected adapter's reference before choosing source formats or
-relying on attachment-only sends:
+option for every source:
 
 ```bash
 pushc send --target alerts:release \
@@ -87,9 +88,8 @@ pushc send --target alerts:release \
   "Build completed"
 ```
 
-Attachment support and source interpretation depend on the selected destination, so do not assume
-unsupported behavior. Do not place credentials in attachment URLs or invent attachment paths; use
-only sources the user supplied or explicitly selected.
+Do not place credentials in attachment URLs or invent attachment paths; use only sources the user
+supplied or explicitly selected.
 
 Add `--dry-run` when the user asks to preview or validate a send:
 
@@ -100,14 +100,73 @@ pushc send --target alerts:release --dry-run "Build completed"
 A successful dry-run means the send was prepared, not performed. Attachment preparation follows the
 selected destination's rules.
 
-For longer message content, use a UTF-8 file or piped stdin:
+#### Literal text message
 
-```bash
-pushc send --target alerts:release --file ./report.txt
-git log -1 | pushc send --target alerts:release
+For longer literal content, use a `.txt` file. Treat the entire file as one literal text string and
+preserve all whitespace and line breaks:
+
+```text
+Production deployment succeeded.
+Review the deployment log before closing the release.
 ```
 
-Do not combine positional content with `--file`.
+```bash
+pushc send --target alerts:release \
+  --title "Build completed" \
+  --param environment=production \
+  --attachment ./report.pdf \
+  --file ./message.txt
+```
+
+#### Structured JSON message
+
+Use a structured message file when the user wants to define a reusable, general-purpose message
+template or needs lower-level control over message structure, such as exact text/attachment
+ordering and attachment metadata. Prefer direct CLI content and options for ordinary one-off sends.
+
+Prefer JSON when creating a structured message file:
+
+```bash
+pushc send --file ./message.json
+```
+
+Each structured file describes exactly one message. Use JSON ordered content so text and
+attachments appear in a precise sequence. Omit `param` when the message does not need it:
+
+```json
+{
+  "target": "alerts:release",
+  "title": "Build completed",
+  "param": {
+    "environment": "production",
+    "group": "deployments"
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "Production deployment succeeded.\n"
+    },
+    {
+      "type": "attachment",
+      "source": "./report.pdf",
+      "name": "deployment-report.pdf",
+      "media_type": "application/pdf"
+    },
+    {
+      "type": "text",
+      "text": "Review the attached report."
+    }
+  ]
+}
+```
+
+Write relative attachment paths relative to the directory containing the message file.
+
+Use `--file` without positional message content. Put attachments inside a structured message file,
+and do not use `--attachment` with that file. CLI `--title` overrides the file's `title`. CLI
+`--param` values merge into the file's `param`, with CLI values taking precedence for matching keys.
+TOML message files are also supported; see [CLI Reference](reference/cli.md) for format detection
+details.
 
 ## References
 

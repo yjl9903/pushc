@@ -1,11 +1,11 @@
-import type { PushPayload } from '@pushc/core';
+import type { NormalizedPushPayload } from '@pushc/core';
 
 import type { JsonValue } from './types.js';
 
 const PARAM_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const ASCII_WHITESPACE = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
 
-export function renderWebhookTemplate(template: string, payload: PushPayload): string {
+export function renderWebhookTemplate(template: string, payload: NormalizedPushPayload): string {
   let output = '';
   let cursor = 0;
   while (cursor < template.length) {
@@ -34,7 +34,7 @@ export function renderWebhookTemplate(template: string, payload: PushPayload): s
   return output;
 }
 
-export function renderWebhookBody(value: JsonValue, payload: PushPayload): JsonValue {
+export function renderWebhookBody(value: JsonValue, payload: NormalizedPushPayload): JsonValue {
   if (typeof value === 'string') return renderWebhookTemplate(value, payload);
   if (Array.isArray(value)) return value.map((item) => renderWebhookBody(item, payload));
   if (value !== null && typeof value === 'object') {
@@ -47,7 +47,10 @@ export function renderWebhookBody(value: JsonValue, payload: PushPayload): JsonV
   return value;
 }
 
-function evaluateExpression(expression: string, payload: PushPayload): string | undefined {
+function evaluateExpression(
+  expression: string,
+  payload: NormalizedPushPayload
+): string | undefined {
   const trimmed = expression.replace(ASCII_WHITESPACE, '');
   const separator = trimmed.indexOf(':-');
   const variable = (separator < 0 ? trimmed : trimmed.slice(0, separator)).replace(
@@ -58,7 +61,10 @@ function evaluateExpression(expression: string, payload: PushPayload): string | 
 
   let value: string | undefined;
   if (variable === 'message') {
-    value = payload.message;
+    value = payload.content
+      .filter((item) => item.type === 'text')
+      .map((item) => item.text)
+      .join('');
   } else if (variable === 'title') {
     value = payload.title;
   } else if (variable.startsWith('param.')) {
@@ -71,5 +77,6 @@ function evaluateExpression(expression: string, payload: PushPayload): string | 
   } else {
     return undefined;
   }
+
   return value === undefined || value === '' ? (fallback ?? '') : value;
 }

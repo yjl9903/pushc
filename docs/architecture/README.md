@@ -4,8 +4,9 @@
 
 ## 系统目标
 
-pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通过 destination 发送包含正文、
-可选附件 source、标题与一层 string param 的 payload。每个 adapter 实例保存可复用连接信息并
+pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通过 destination 发送 string、
+string array 或有序 text/attachment AST，以及可选标题与一层 string param。core 将所有输入
+归一化为唯一 AST。每个 adapter 实例保存可复用连接信息并
 管理自己的 targets；target 是 adapter-specific partial config。系统当前支持通用 HTTP
 Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件与 HTTP(S) 附件。
 
@@ -31,10 +32,12 @@ Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件
 1. CLI 根据 cwd 与 `--config`/环境变量找到配置目录或文件，并标准化为配置文件路径。
 2. Node 组合层加载 `.env` 和 TOML，按 `adapters.*.type` 直接构造官方 adapter。
 3. 组合层把嵌套的具名 target partial 注册到对应 `adapter.targets`；没有具名 target 时解析并校验 adapter default，随后把 adapter 注册到 client。
-4. CLI 从参数、文件或 stdin 读取消息，组合 `--title`/`--param` payload，并把
-   `--target <adapter[:target]>` string 交给 client。
-5. client 解析 destination 并取得 adapter；adapter 校验 payload/options，将省略的 target、
-   具名字符串或临时对象解析为具体 target，并异步完成仅限本地的 request preparation。
+4. CLI 从参数、文件或 stdin 读取消息，按后缀和 syntax 探测 JSON/TOML/text，形成 raw
+   PushPayload 与可选 document target；CLI target 可覆盖 document target，CLI param 可按
+   key 覆盖 document param。
+5. client 解析 destination 并取得 adapter；base adapter 由 core 校验并 normalize payload，
+   再将省略的 target、具名字符串或临时对象解析为具体 target，并异步完成仅限本地的 request
+   preparation。
 6. preparation 同时产生公开 receipt request 与内部 transport request。正常 send 进入
    `dispatchRequest` 并由 core 组合 receipt；dry-run 跳过 dispatch 和全部目标服务交互，
    返回固定带 `dryRun: true`、receipt 只含公开 request 的结果。

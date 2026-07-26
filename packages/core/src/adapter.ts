@@ -3,6 +3,7 @@ import type {
   PushAdapterDryRunResult,
   PushAdapterSendResult,
   PushDispatchResult,
+  NormalizedPushPayload,
   PushPayload,
   PushPreparedRequest,
   PushReceipt,
@@ -35,7 +36,7 @@ export abstract class PushAdapter<
 
   protected abstract prepareRequest(
     target: TTarget,
-    payload: PushPayload,
+    payload: NormalizedPushPayload,
     options: PushAdapterOperationOptions
   ): Promise<PushPreparedRequest<TReceiptRequest, TTransportRequest>>;
 

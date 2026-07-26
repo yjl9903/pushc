@@ -4,6 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 import { isDestinationName, PushError } from '@pushc/core';
 import { config as loadDotenv } from 'dotenv';
 import { parse } from 'smol-toml';
+
+import { ConfigError } from './error.js';
 import { isNonEmptyString, isRecord } from './utils/value.js';
 
 export interface LoadedConfig {
@@ -32,21 +34,6 @@ export interface PushAdapterConfigDefinition {
 
 export interface PushConfig {
   adapters: Readonly<Record<string, PushAdapterConfigDefinition>>;
-}
-
-export type ConfigErrorCode =
-  'CONFIG_NOT_FOUND' | 'CONFIG_READ_FAILED' | 'CONFIG_INVALID' | 'ENV_MISSING';
-
-export class ConfigError extends Error {
-  readonly code: ConfigErrorCode;
-  override readonly cause?: unknown;
-
-  constructor(code: ConfigErrorCode, message: string, options: { cause?: unknown } = {}) {
-    super(message);
-    this.name = 'ConfigError';
-    this.code = code;
-    this.cause = options.cause;
-  }
 }
 
 export async function findConfigPath(options: FindConfigPathOptions = {}): Promise<string> {

@@ -32,7 +32,7 @@ const adapter = new WebhookAdapter({
 
 await adapter.send(undefined, {
   title: 'Production',
-  message: 'Build completed',
+  content: 'Build completed',
   param: { group: 'releases' }
 });
 ```

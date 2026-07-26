@@ -42,7 +42,7 @@ describe('webhook configuration and targets', () => {
         "response": {},
       }
     `);
-    await expect(adapter.send(undefined, { message: 'hello' })).resolves.toMatchInlineSnapshot(`
+    await expect(adapter.send(undefined, { content: 'hello' })).resolves.toMatchInlineSnapshot(`
       {
         "receipt": {
           "request": {
@@ -293,7 +293,7 @@ describe('webhook templates and requests', () => {
 
     expect(
       buildWebhookRequest(adapter.config.request, 'https://example.com', {
-        message: 'hello'
+        content: [{ type: 'text', text: 'hello' }]
       }).timeout_ms
     ).toBe(1234);
   });
@@ -308,12 +308,27 @@ describe('webhook templates and requests', () => {
       { fetch }
     );
 
-    const result = await adapter.send(undefined, { message: 'hello' });
+    const result = await adapter.send(undefined, { content: 'hello' });
     expect(result).toMatchObject({
       success: true,
       receipt: { request: { headers: { 'x-token': 'token' } } }
     });
     expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('x-token')).toBe('token');
+  });
+
+  it('concatenates normalized text nodes without inserting separators', async () => {
+    const fetch = okFetch();
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com',
+        request: { content_type: 'text/plain', body: '{{message}}' }
+      },
+      { fetch }
+    );
+
+    await adapter.send(undefined, { content: ['hello', ' ', 'world'] });
+
+    expect(fetch.mock.calls[0]![1]?.body).toBe('hello world');
   });
 
   it('renders payload fields into request URL, headers and JSON string values', async () => {
@@ -346,7 +361,7 @@ describe('webhook templates and requests', () => {
         }
       },
       {
-        message: 'build complete',
+        content: [{ type: 'text', text: 'build complete' }],
         title: '',
         param: { topic: 'deployments', group: 'production' }
       }
@@ -388,7 +403,7 @@ describe('webhook templates and requests', () => {
       adapter.send(
         undefined,
         {
-          message: 'build complete',
+          content: 'build complete',
           title: '',
           param: { topic: 'deployments', group: 'production' }
         },
@@ -420,7 +435,7 @@ describe('webhook templates and requests', () => {
   it('rejects attachments without calling fetch in send or dry-run', async () => {
     const fetch = okFetch();
     const adapter = new WebhookAdapter({ url: 'https://example.com/hook' }, { fetch });
-    const payload = { message: '', attachments: ['photo.png'] };
+    const payload = { content: '', attachments: ['photo.png'] };
 
     await expect(adapter.send(undefined, payload)).resolves.toMatchObject({
       success: false,
@@ -442,7 +457,7 @@ describe('webhook templates and requests', () => {
 
   it('scans once, supports fallback, and preserves invalid expressions', () => {
     const payload = {
-      message: '{{title}}',
+      content: [{ type: 'text' as const, text: '{{title}}' }],
       title: '',
       param: { empty: '', spaced: ' ', inject: '{{message}}' }
     };
@@ -466,7 +481,7 @@ describe('webhook templates and requests', () => {
       },
       { fetch }
     );
-    await adapter.send(undefined, { message: 'hello' });
+    await adapter.send(undefined, { content: 'hello' });
     const [, init] = fetch.mock.calls[0]!;
     expect(init?.body).toBe('Message: hello');
     expect(new Headers(init?.headers).get('content-type')).toBe('text/plain; charset=utf-8');
@@ -485,7 +500,7 @@ describe('webhook templates and requests', () => {
       },
       { fetch }
     );
-    await compatible.send(undefined, { message: 'ok' });
+    await compatible.send(undefined, { content: 'ok' });
     expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('content-type')).toBe(
       'Application/JSON ; charset = utf-8'
     );
@@ -503,7 +518,7 @@ describe('webhook templates and requests', () => {
     );
     await expect(
       conflicting.send(undefined, {
-        message: 'ok',
+        content: 'ok',
         param: { type: 'text/plain' }
       })
     ).resolves.toMatchObject({
@@ -524,7 +539,7 @@ describe('webhook templates and requests', () => {
       },
       { fetch }
     );
-    await adapter.send(undefined, { message: 'ok' });
+    await adapter.send(undefined, { content: 'ok' });
     expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('content-type')).toBe('text/markdown');
   });
 
@@ -535,7 +550,7 @@ describe('webhook templates and requests', () => {
     'https://user:secret@example.com/hook'
   ])('rejects unsafe target URL %s at send time', async (url) => {
     const adapter = new WebhookAdapter({ url: 'https://example.com/base' }, { fetch: okFetch() });
-    await expect(adapter.send({ request: { url } }, { message: 'ok' })).resolves.toMatchObject({
+    await expect(adapter.send({ request: { url } }, { content: 'ok' })).resolves.toMatchObject({
       success: false,
       error: { code: 'INVALID_CONFIG' }
     });
@@ -546,7 +561,7 @@ describe('webhook templates and requests', () => {
     const adapter = new WebhookAdapter({ url: 'https://example.com/base' }, { fetch });
     await adapter.send(
       { request: { url: 'https://example.com:443/other path' } },
-      { message: 'ok' }
+      { content: 'ok' }
     );
     expect(fetch.mock.calls[0]![0]).toBe('https://example.com/other%20path');
   });
@@ -570,8 +585,8 @@ describe('webhook templates and requests', () => {
     );
 
     await Promise.all([
-      adapter.send(undefined, { message: 'first' }),
-      adapter.send(undefined, { message: 'second' })
+      adapter.send(undefined, { content: 'first' }),
+      adapter.send(undefined, { content: 'second' })
     ]);
     expect(calls.map(([, init]) => new Headers(init?.headers).get('x-message')))
       .toMatchInlineSnapshot(`
@@ -622,7 +637,7 @@ describe('webhook errors and lifecycle', () => {
         )
       }
     );
-    await expect(adapter.send(undefined, { message: 'ok' })).resolves.toMatchObject({
+    await expect(adapter.send(undefined, { content: 'ok' })).resolves.toMatchObject({
       success: false,
       receipt: { response: { status: 503 } },
       error: { code: 'SEND_FAILED', message: 'Webhook returned HTTP 503.' }
@@ -631,7 +646,7 @@ describe('webhook errors and lifecycle', () => {
 
   it('reports unavailable fetch directly', async () => {
     const adapter = new WebhookAdapter({ url: 'https://example.com' }, { fetch: 0 as never });
-    await expect(adapter.send(undefined, { message: 'ok' })).resolves.toMatchObject({
+    await expect(adapter.send(undefined, { content: 'ok' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: 'This runtime does not provide fetch.' }
     });
@@ -650,7 +665,7 @@ describe('webhook errors and lifecycle', () => {
       { url: 'https://example.com', request: { timeout_ms: 5 } },
       { fetch }
     );
-    await expect(adapter.send(undefined, { message: 'hello' })).resolves.toMatchObject({
+    await expect(adapter.send(undefined, { content: 'hello' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: expect.stringContaining('timed out') }
     });
@@ -658,7 +673,7 @@ describe('webhook errors and lifecycle', () => {
     const controller = new AbortController();
     const pending = adapter.send(
       undefined,
-      { message: 'hello' },
+      { content: 'hello' },
       {
         signal: controller.signal
       }
@@ -694,7 +709,7 @@ describe('webhook errors and lifecycle', () => {
       }
     );
 
-    await expect(adapter.send(undefined, { message: 'hello' })).resolves.toEqual({
+    await expect(adapter.send(undefined, { content: 'hello' })).resolves.toEqual({
       success: true,
       receipt: {
         summary: 'Webhook POST to example.com:8443 completed with HTTP 202.',

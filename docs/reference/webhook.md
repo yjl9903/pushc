@@ -32,6 +32,7 @@
 或 adapter 的 `request.url`（包括 query）、header value 和 body string value 可以通过模板
 引用 `{{message}}`、`{{title}}` 与 `{{param.key}}`。`request.url` 必须是包含 scheme 的绝对
 HTTP(S) URL，并与顶层 `url` 同 origin，不支持相对 URL。其余字段原样传给上游服务。
+结构化消息可以提供 param；同时传入 CLI param 时，同名 key 以 CLI 为准。
 本文配置示例按照 [Webhook adapter 优化计划](../plan/260722-webhook-optimization.md)中的预期
 配置形态描述。
 

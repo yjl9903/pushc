@@ -1,6 +1,28 @@
+export interface PushTextContent {
+  readonly type: 'text';
+  readonly text: string;
+}
+
+export interface PushAttachmentContent {
+  readonly type: 'attachment';
+  readonly source: string;
+  readonly name?: string;
+  readonly mediaType?: string;
+}
+
+export type PushContent = PushTextContent | PushAttachmentContent;
+
+export type PushContentInput = string | readonly string[] | readonly PushContent[];
+
 export interface PushPayload {
-  readonly message: string;
+  readonly content: PushContentInput;
   readonly attachments?: readonly string[];
+  readonly title?: string;
+  readonly param?: Readonly<Record<string, string>> | null;
+}
+
+export interface NormalizedPushPayload {
+  readonly content: readonly PushContent[];
   readonly title?: string;
   readonly param?: Readonly<Record<string, string>>;
 }

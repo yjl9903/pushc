@@ -37,7 +37,7 @@ describe('napcat adapter', () => {
     await expect(
       adapter.send(
         { group_id: '123456' },
-        { message: 'hello', title: 'ignored', param: { x: 'ignored' } },
+        { content: 'hello', title: 'ignored', param: { x: 'ignored' } },
         { dryRun: true }
       )
     ).resolves.toEqual({
@@ -80,7 +80,7 @@ describe('napcat adapter', () => {
         { factory }
       );
       await expect(
-        adapter.send(targetConfig, { message: 'hello', title: 'ignored', param: { x: 'ignored' } })
+        adapter.send(targetConfig, { content: 'hello', title: 'ignored', param: { x: 'ignored' } })
       ).resolves.toEqual({
         success: true,
         receipt: {
@@ -175,11 +175,11 @@ describe('napcat adapter', () => {
       { factory: () => client }
     );
 
-    await expect(adapter.send({ group_id: '123' }, { message: 'hello' })).resolves.toMatchObject({
+    await expect(adapter.send({ group_id: '123' }, { content: 'hello' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: 'permission denied' }
     });
-    await expect(adapter.send({ group_id: '123' }, { message: 'again' })).resolves.toMatchObject({
+    await expect(adapter.send({ group_id: '123' }, { content: 'again' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: 'NapCat failed to send the message.' }
     });
@@ -214,7 +214,7 @@ describe('napcat adapter', () => {
       { factory: () => client }
     );
 
-    await expect(adapter.send({ user_id: '123' }, { message: 'hello' })).resolves.toMatchObject({
+    await expect(adapter.send({ user_id: '123' }, { content: 'hello' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: expect.stringContaining('timed out') }
     });
@@ -234,7 +234,7 @@ describe('napcat adapter', () => {
 
     const sending = adapter.send(
       { user_id: '123' },
-      { message: 'hello' },
+      { content: 'hello' },
       { signal: controller.signal }
     );
     controller.abort(new Error('cancelled by caller'));
@@ -264,8 +264,8 @@ describe('napcat adapter', () => {
     const target = { group_id: '123' };
 
     expect(factory).not.toHaveBeenCalled();
-    await adapter.send(target, { message: 'first' });
-    await adapter.send(target, { message: 'second' });
+    await adapter.send(target, { content: 'first' });
+    await adapter.send(target, { content: 'second' });
 
     expect(factory).toHaveBeenCalledOnce();
     expect(client.connect).toHaveBeenCalledOnce();
@@ -274,7 +274,7 @@ describe('napcat adapter', () => {
 
     await Promise.all([adapter.destroy(), adapter.destroy()]);
     expect(client.disconnect).toHaveBeenCalledOnce();
-    await expect(adapter.send(target, { message: 'after destroy' })).resolves.toMatchObject({
+    await expect(adapter.send(target, { content: 'after destroy' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: expect.stringContaining('aborted') }
     });
@@ -293,8 +293,8 @@ describe('napcat adapter', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
     const target = { user_id: '123' };
 
-    const first = adapter.send(target, { message: 'first' });
-    const second = adapter.send(target, { message: 'second' });
+    const first = adapter.send(target, { content: 'first' });
+    const second = adapter.send(target, { content: 'second' });
     await vi.waitFor(() => {
       expect(factory).toHaveBeenCalledOnce();
       expect(client.connect).toHaveBeenCalledOnce();
@@ -319,11 +319,11 @@ describe('napcat adapter', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
     const target = { group_id: '123' };
 
-    await expect(adapter.send(target, { message: 'first' })).resolves.toMatchObject({
+    await expect(adapter.send(target, { content: 'first' })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: 'connect failed' }
     });
-    await expect(adapter.send(target, { message: 'second' })).resolves.toMatchObject({
+    await expect(adapter.send(target, { content: 'second' })).resolves.toMatchObject({
       success: true,
       receipt: { response: { messageId: '42' } }
     });
@@ -354,7 +354,7 @@ describe('napcat adapter', () => {
     );
     const result = await adapter.send(
       { group_id: '123' },
-      { message: 'caption', attachments: fixtures.map(([name]) => join(root, name)) }
+      { content: 'caption', attachments: fixtures.map(([name]) => join(root, name)) }
     );
 
     expect(result).toEqual({
@@ -397,6 +397,61 @@ describe('napcat adapter', () => {
     await adapter.destroy();
   });
 
+  it('preserves explicit AST order and attachment metadata', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-napcat-ast-'));
+    directories.push(root);
+    const file = join(root, 'contents.bin');
+    await writeFile(file, 'image');
+    const client = mockClient();
+    const adapter = new NapCatAdapter(
+      { base_url: 'ws://localhost:3001' },
+      { factory: () => client }
+    );
+
+    const result = await adapter.send(
+      { group_id: '123' },
+      {
+        content: [
+          { type: 'text', text: 'before' },
+          { type: 'text', text: ' \n ' },
+          {
+            type: 'attachment',
+            source: file,
+            name: 'photo.png',
+            mediaType: 'Image/PNG'
+          },
+          { type: 'text', text: 'after' }
+        ]
+      }
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      receipt: {
+        request: {
+          params: {
+            message: [
+              { type: 'text', data: { text: 'before' } },
+              { type: 'text', data: { text: ' \n ' } },
+              attachmentReceipt('image', 'photo.png', 'Image/PNG', 'image'),
+              { type: 'text', data: { text: 'after' } }
+            ]
+          }
+        }
+      }
+    });
+    expect(client.send_msg).toHaveBeenCalledWith({
+      group_id: 123,
+      message: [
+        { type: 'text', data: { text: 'before' } },
+        { type: 'text', data: { text: ' \n ' } },
+        attachmentTransport('image', 'image'),
+        { type: 'text', data: { text: 'after' } }
+      ]
+    });
+    await adapter.destroy();
+  });
+
   it.skipIf(process.platform === 'win32')(
     'treats a relative filename containing a colon as a local attachment',
     async () => {
@@ -409,7 +464,7 @@ describe('napcat adapter', () => {
       const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
 
       await expect(
-        adapter.send({ user_id: '123' }, { message: '', attachments: [source] }, { dryRun: true })
+        adapter.send({ user_id: '123' }, { content: '', attachments: [source] }, { dryRun: true })
       ).resolves.toEqual({
         dryRun: true,
         success: true,
@@ -418,7 +473,10 @@ describe('napcat adapter', () => {
             method: 'send_msg',
             params: {
               user_id: 123,
-              message: [attachmentReceipt('file', 'final.txt', 'text/plain', 'notes')]
+              message: [
+                attachmentReceipt('file', 'final.txt', 'text/plain', 'notes'),
+                { type: 'text', data: { text: '' } }
+              ]
             }
           }
         }
@@ -437,7 +495,7 @@ describe('napcat adapter', () => {
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
 
     await expect(
-      adapter.send({ user_id: '123' }, { message: '  ', attachments: [file] }, { dryRun: true })
+      adapter.send({ user_id: '123' }, { content: '  ', attachments: [file] }, { dryRun: true })
     ).resolves.toEqual({
       dryRun: true,
       success: true,
@@ -446,7 +504,10 @@ describe('napcat adapter', () => {
           method: 'send_msg',
           params: {
             user_id: 123,
-            message: [attachmentReceipt('image', 'photo.png', 'image/png', 'image')]
+            message: [
+              attachmentReceipt('image', 'photo.png', 'image/png', 'image'),
+              { type: 'text', data: { text: '  ' } }
+            ]
           }
         }
       }
@@ -479,7 +540,7 @@ describe('napcat adapter', () => {
       { factory: () => client, fetch }
     );
 
-    const result = await adapter.send({ group_id: '123' }, { message: '', attachments: urls });
+    const result = await adapter.send({ group_id: '123' }, { content: '', attachments: urls });
 
     expect(result).toEqual({
       success: true,
@@ -493,7 +554,8 @@ describe('napcat adapter', () => {
               remoteAttachmentReceipt('image', 'photo.JPEG', 'image/jpeg', 'cdn.example.com'),
               remoteAttachmentReceipt('record', 'sound.mp3', 'audio/mpeg', 'media.example.com'),
               remoteAttachmentReceipt('video', 'clip.mp4', 'video/mp4', 'media.example.com'),
-              remoteAttachmentReceipt('file', 'report.pdf', 'application/pdf', 'files.example.com')
+              remoteAttachmentReceipt('file', 'report.pdf', 'application/pdf', 'files.example.com'),
+              { type: 'text', data: { text: '' } }
             ]
           }
         },
@@ -506,7 +568,8 @@ describe('napcat adapter', () => {
         remoteAttachmentTransport('image', urls[0]!),
         remoteAttachmentTransport('record', urls[1]!),
         remoteAttachmentTransport('video', urls[2]!),
-        remoteAttachmentTransport('file', urls[3]!, 'report.pdf')
+        remoteAttachmentTransport('file', urls[3]!, 'report.pdf'),
+        { type: 'text', data: { text: '' } }
       ]
     });
     expect(fetch).toHaveBeenCalledTimes(urls.length);
@@ -516,6 +579,53 @@ describe('napcat adapter', () => {
       signal: expect.any(AbortSignal)
     });
     expect(JSON.stringify(result)).not.toContain('token=secret');
+    await adapter.destroy();
+  });
+
+  it('keeps an explicit remote media type without probing it', async () => {
+    const url = 'https://cdn.example.com/photo';
+    const client = mockClient();
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () => new Response(null, { headers: { 'content-type': 'text/plain' } })
+    );
+    const adapter = new NapCatAdapter(
+      { base_url: 'ws://localhost:3001' },
+      { factory: () => client, fetch }
+    );
+
+    await expect(
+      adapter.send(
+        { group_id: '123' },
+        {
+          content: [
+            {
+              type: 'attachment',
+              source: url,
+              name: 'photo.png',
+              mediaType: 'Image/PNG'
+            }
+          ]
+        }
+      )
+    ).resolves.toEqual({
+      success: true,
+      receipt: {
+        summary: 'NapCat sent a message to group 123 (message ID: 42).',
+        request: {
+          method: 'send_msg',
+          params: {
+            group_id: 123,
+            message: [remoteAttachmentReceipt('image', 'photo.png', 'Image/PNG', 'cdn.example.com')]
+          }
+        },
+        response: { messageId: '42' }
+      }
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(client.send_msg).toHaveBeenCalledWith({
+      group_id: 123,
+      message: [remoteAttachmentTransport('image', url)]
+    });
     await adapter.destroy();
   });
 
@@ -532,7 +642,7 @@ describe('napcat adapter', () => {
     const factory = vi.fn(() => client);
     const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory, fetch });
 
-    const sending = adapter.send({ group_id: '123' }, { message: '', attachments: urls });
+    const sending = adapter.send({ group_id: '123' }, { content: '', attachments: urls });
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(urls.length));
     expect(factory).not.toHaveBeenCalled();
 
@@ -548,7 +658,8 @@ describe('napcat adapter', () => {
             message: [
               remoteAttachmentReceipt('image', 'one', 'image/png', 'cdn.example.com'),
               remoteAttachmentReceipt('file', 'two', 'application/pdf', 'cdn.example.com'),
-              remoteAttachmentReceipt('record', 'three', 'audio/mpeg', 'cdn.example.com')
+              remoteAttachmentReceipt('record', 'three', 'audio/mpeg', 'cdn.example.com'),
+              { type: 'text', data: { text: '' } }
             ]
           }
         }
@@ -559,7 +670,8 @@ describe('napcat adapter', () => {
       message: [
         remoteAttachmentTransport('image', urls[0]!),
         remoteAttachmentTransport('file', urls[1]!, 'two'),
-        remoteAttachmentTransport('record', urls[2]!)
+        remoteAttachmentTransport('record', urls[2]!),
+        { type: 'text', data: { text: '' } }
       ]
     });
     await adapter.destroy();
@@ -576,7 +688,7 @@ describe('napcat adapter', () => {
       { factory: () => client, fetch }
     );
 
-    const sending = adapter.send({ group_id: '123' }, { message: '', attachments: urls });
+    const sending = adapter.send({ group_id: '123' }, { content: '', attachments: urls });
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(8));
     expect(fetch).toHaveBeenCalledTimes(8);
 
@@ -606,7 +718,7 @@ describe('napcat adapter', () => {
     );
 
     await expect(
-      adapter.send({ group_id: '123' }, { message: '', attachments: [url] })
+      adapter.send({ group_id: '123' }, { content: '', attachments: [url] })
     ).resolves.toEqual({
       success: true,
       receipt: {
@@ -616,7 +728,8 @@ describe('napcat adapter', () => {
           params: {
             group_id: 123,
             message: [
-              remoteAttachmentReceipt('image', 'HOBmCuNaUAAtnyv', 'image/jpeg', 'pbs.twimg.com')
+              remoteAttachmentReceipt('image', 'HOBmCuNaUAAtnyv', 'image/jpeg', 'pbs.twimg.com'),
+              { type: 'text', data: { text: '' } }
             ]
           }
         },
@@ -625,7 +738,7 @@ describe('napcat adapter', () => {
     });
     expect(client.send_msg).toHaveBeenCalledWith({
       group_id: 123,
-      message: [remoteAttachmentTransport('image', url)]
+      message: [remoteAttachmentTransport('image', url), { type: 'text', data: { text: '' } }]
     });
     await adapter.destroy();
   });
@@ -641,7 +754,7 @@ describe('napcat adapter', () => {
     await expect(
       adapter.send(
         { group_id: '123' },
-        { message: '', attachments: ['https://cdn.example.com/photo'] }
+        { content: '', attachments: ['https://cdn.example.com/photo'] }
       )
     ).resolves.toMatchObject({
       success: false,
@@ -654,7 +767,8 @@ describe('napcat adapter', () => {
                 'photo',
                 'application/octet-stream',
                 'cdn.example.com'
-              )
+              ),
+              { type: 'text', data: { text: '' } }
             ]
           }
         }
@@ -675,7 +789,7 @@ describe('napcat adapter', () => {
       await expect(
         adapter.send(
           { user_id: '123' },
-          { message: '', attachments: ['https://cdn.example.com/photo.png?token=secret'] },
+          { content: '', attachments: ['https://cdn.example.com/photo.png?token=secret'] },
           { dryRun: true }
         )
       ).resolves.toEqual({
@@ -687,7 +801,8 @@ describe('napcat adapter', () => {
             params: {
               user_id: 123,
               message: [
-                remoteAttachmentReceipt('image', 'photo.png', 'image/png', 'cdn.example.com')
+                remoteAttachmentReceipt('image', 'photo.png', 'image/png', 'cdn.example.com'),
+                { type: 'text', data: { text: '' } }
               ]
             }
           }
@@ -709,7 +824,7 @@ describe('napcat adapter', () => {
       adapter.send(
         { user_id: '123' },
         {
-          message: '',
+          content: '',
           attachments: ['https://files.example.com/folder%2Freport.pdf']
         },
         { dryRun: true }
@@ -723,7 +838,8 @@ describe('napcat adapter', () => {
           params: {
             user_id: 123,
             message: [
-              remoteAttachmentReceipt('file', 'report.pdf', 'application/pdf', 'files.example.com')
+              remoteAttachmentReceipt('file', 'report.pdf', 'application/pdf', 'files.example.com'),
+              { type: 'text', data: { text: '' } }
             ]
           }
         }
@@ -733,7 +849,7 @@ describe('napcat adapter', () => {
     await expect(
       adapter.send(
         { user_id: '123' },
-        { message: '', attachments: ['https://files.example.com/%00.pdf'] },
+        { content: '', attachments: ['https://files.example.com/%00.pdf'] },
         { dryRun: true }
       )
     ).resolves.toMatchObject({
@@ -744,6 +860,41 @@ describe('napcat adapter', () => {
         message: 'Remote attachment filenames must not contain control characters.'
       }
     });
+    expect(factory).not.toHaveBeenCalled();
+    await adapter.destroy();
+  });
+
+  it('rejects unsafe explicit attachment names', async () => {
+    const factory = vi.fn(() => mockClient());
+    const adapter = new NapCatAdapter({ base_url: 'ws://localhost:3001' }, { factory });
+
+    for (const source of ['https://files.example.com/report.pdf', './missing.pdf']) {
+      for (const name of [
+        '.',
+        '..',
+        '../report.pdf',
+        'folder/report.pdf',
+        String.raw`folder\report.pdf`,
+        'report\n.pdf'
+      ]) {
+        await expect(
+          adapter.send(
+            { user_id: '123' },
+            {
+              content: [{ type: 'attachment', source, name }]
+            },
+            { dryRun: true }
+          )
+        ).resolves.toMatchObject({
+          dryRun: true,
+          success: false,
+          error: {
+            code: 'INVALID_MESSAGE',
+            message: 'Attachment names must be safe filenames.'
+          }
+        });
+      }
+    }
     expect(factory).not.toHaveBeenCalled();
     await adapter.destroy();
   });
@@ -760,7 +911,7 @@ describe('napcat adapter', () => {
       await expect(
         adapter.send(
           { user_id: '123' },
-          { message: '', attachments: [attachment] },
+          { content: '', attachments: [attachment] },
           { dryRun: true }
         )
       ).resolves.toMatchObject({
@@ -790,7 +941,7 @@ describe('napcat adapter', () => {
       await expect(
         adapter.send(
           { user_id: '123' },
-          { message: '', attachments: [attachment] },
+          { content: '', attachments: [attachment] },
           { dryRun: true }
         )
       ).resolves.toMatchObject({

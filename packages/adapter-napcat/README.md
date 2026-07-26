@@ -27,7 +27,7 @@ await adapter.send(
     group_id: '123456789'
   },
   {
-    message: 'Build completed',
+    content: 'Build completed',
     attachments: ['./screenshot.png', 'https://example.com/report.pdf']
   }
 );

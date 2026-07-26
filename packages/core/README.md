@@ -38,7 +38,7 @@ client.adapters.register(
 
 await client.send('bark', {
   title: 'Production',
-  message: 'Build completed',
+  content: ['Build ', 'completed'],
   param: { group: 'deployments' }
 });
 

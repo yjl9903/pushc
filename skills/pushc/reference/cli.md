@@ -9,17 +9,10 @@
 - [Adapter-specific behavior](#adapter-specific-behavior)
 - [Configuration loading](#configuration-loading)
 - [Output and exit status](#output-and-exit-status)
-- [Operational behavior](#operational-behavior)
 
 ## Invocation
 
-Pushc requires Node.js 24 or newer and is distributed from npm:
-
-```bash
-npm install -g pushc
-pushc --version
-pushc --help
-```
+Pushc requires Node.js 24 or newer.
 
 Syntax:
 
@@ -40,8 +33,7 @@ working directory. This takes precedence over `PUSHC_CONFIG` and automatic disco
 ### `--json`
 
 Write one compact JSON object followed by a newline. Success goes to stdout. Errors go to stderr.
-Argument parser failures that occur before a command context is established may fall back to plain
-text rather than JSON.
+Some early argument errors may still be written as plain text.
 
 ## `targets`
 
@@ -49,9 +41,9 @@ text rather than JSON.
 pushc targets [--config <path>] [--json]
 ```
 
-Load and validate the configuration, construct adapters, and list configured destinations in lexical
-order. An adapter with named targets produces one entry per target. An adapter without named targets
-produces its default destination, even though no named target is registered.
+Load and validate the configuration, then list configured destinations in lexical order. An adapter
+with named targets produces one entry per target. An adapter without named targets produces its
+default destination, even though no named target is registered.
 
 Text output:
 
@@ -77,15 +69,165 @@ options, target options, URLs, or tokens.
 ## `send`
 
 ```bash
-pushc send --target <adapter[:target]> [--title <title>] [--param key=value] [--attachment <source>] [--dry-run] [...content]
-pushc send --target <adapter[:target]> [--title <title>] [--param key=value] [--attachment <source>] [--dry-run] --file <path>
-<producer> | pushc send --target <adapter[:target]> [--dry-run]
+pushc send --target <adapter[:target]> [options] [...content]
+pushc send [--target <adapter[:target]>] [options] --file <path>
+<producer> | pushc send [--target <adapter[:target]>] [options]
 ```
 
-`--target` is required. Adapter and target names must start with a letter or digit and contain only
-letters, digits, `_`, or `-`. At most one colon is allowed. `alerts:release` selects named target
-`release` on adapter `alerts`; `alerts` selects the adapter's default target. Omitting a target does
-not fall back to the only named target.
+### Target
+
+Every message needs a target. Pass `--target`, or declare `target` in a structured message file.
+CLI `--target` overrides the value in the message file. Adapter and target names must start with a
+letter or digit and contain only letters, digits, `_`, or `-`. At most one colon is allowed.
+`alerts:release` selects the named `release` target on the `alerts` adapter. `alerts` selects that
+adapter's default target; it does not select the adapter's only named target.
+
+### Message sources
+
+Pushc obtains message content from these sources:
+
+1. Positional content after `send` is joined with one space and treated as literal text.
+2. `-f, --file <path>` reads a UTF-8 message file.
+3. When neither is present, non-TTY stdin is read to completion.
+
+Positional content and `--file` are mutually exclusive. When `--file` is present, pushc does not read
+stdin. With no content source, at least one CLI attachment is required.
+
+### Literal text
+
+Pass short text directly:
+
+```bash
+pushc send --target alerts:release "Production deployment succeeded."
+```
+
+Use a `.txt` file when whitespace and line breaks must be preserved:
+
+```bash
+pushc send --target alerts:release --file ./message.txt
+```
+
+A `.txt` file is always literal text, even if its contents look like JSON or TOML. Plain-text file
+and stdin content is not trimmed or otherwise transformed before sending. A whitespace-only
+message requires at least one attachment.
+
+Literal text can be combined with `--title`, `--param`, and `--attachment`:
+
+```bash
+pushc send --target alerts:release \
+  --title "Build completed" \
+  --param environment=production \
+  --attachment ./report.pdf \
+  --file ./message.txt
+```
+
+CLI attachment paths resolve from the current working directory.
+
+### Structured messages
+
+Use a structured message file to define a reusable message template or to control the exact order
+and metadata of text and attachments. Each file describes one message.
+
+JSON is the primary structured format:
+
+```json
+{
+  "target": "alerts:release",
+  "title": "Build completed",
+  "param": {
+    "environment": "production",
+    "group": "deployments"
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "Production deployment succeeded.\n"
+    },
+    {
+      "type": "attachment",
+      "source": "./report.pdf",
+      "name": "deployment-report.pdf",
+      "media_type": "application/pdf"
+    },
+    {
+      "type": "text",
+      "text": "Review the attached report."
+    }
+  ]
+}
+```
+
+Send it with:
+
+```bash
+pushc send --file ./message.json
+```
+
+Structured JSON can also be read from stdin.
+
+Write a structured message file with these fields:
+
+| Field     | Value                           | Description                                  |
+| --------- | ------------------------------- | -------------------------------------------- |
+| `content` | ordered content array           | Required message content.                    |
+| `target`  | string                          | Default target; CLI `--target` overrides it. |
+| `title`   | string                          | Optional title; CLI `--title` overrides it.  |
+| `param`   | object containing string values | Optional adapter parameters.                 |
+
+`param` keys follow the same rules as CLI `--param` keys. The `content` array accepts only `text`
+and `attachment` nodes.
+
+A text node contains:
+
+- `type`: must be `text`.
+- `text`: the text string to send.
+
+An attachment node contains:
+
+- `type`: must be `attachment`.
+- `source`: a non-empty source accepted by the selected adapter.
+- `name`: an optional non-empty attachment name.
+- `media_type`: an optional MIME type such as `application/pdf`.
+
+Nodes appear in the declared order. Unknown node types and unknown node fields are rejected.
+
+Relative attachment sources in a message file resolve from that file's directory. For piped JSON or
+TOML, they resolve from the current working directory. Absolute paths and sources with a URI scheme,
+such as `https://`, are passed unchanged to the selected adapter.
+
+CLI options interact with a structured message as follows:
+
+| CLI option     | Behavior                                                     |
+| -------------- | ------------------------------------------------------------ |
+| `--target`     | Overrides `target` in the message.                           |
+| `--param`      | Merges into `param`; CLI values override matching keys.      |
+| `--title`      | Overrides `title` in the message.                            |
+| `--attachment` | Rejected; use attachment nodes if the adapter supports them. |
+| `--dry-run`    | Prepares the message normally without sending it.            |
+| `--json`       | Changes CLI output only.                                     |
+| `--config`     | Selects CLI configuration only.                              |
+
+TOML structured messages are also supported and use the same fields and content rules.
+
+### Format detection
+
+Message files and stdin are detected in this order; suffix matching is case-insensitive:
+
+| Input                   | Detection order    |
+| ----------------------- | ------------------ |
+| `.json`                 | JSON → TOML → text |
+| `.toml`                 | TOML → JSON → text |
+| `.txt`                  | text only          |
+| Other or no file suffix | JSON → TOML → text |
+| stdin                   | JSON → TOML → text |
+
+Pushc tries the next format only when JSON or TOML syntax cannot be parsed. Once either parser
+accepts the syntax, the input is treated as structured. If it is not a valid message object, pushc
+reports an error instead of reinterpreting it as text.
+
+Positional content is always literal text and is never inspected as JSON or TOML.
+
+### Send options
 
 `--title` supplies the optional public title field.
 
@@ -112,20 +254,11 @@ The selected adapter decides whether attachments are supported, which source for
 they are prepared, and whether an empty message may accompany them. Read its reference before using
 this option.
 
-`--dry-run` performs the same configuration, destination, target, payload, and local preparation as
-a real send, then returns the prepared send without dispatching it. Preparation details are
-adapter-specific. A successful dry-run means the send is ready, not completed.
+`--dry-run` validates and prepares the same message and destination as a real send without sending
+it. Preparation details are adapter-specific. A successful dry-run means the send is ready, not
+completed.
 
-Message source precedence and validation:
-
-1. One or more positional content words are joined with a single space.
-2. Otherwise, `-f, --file <path>` reads the file as UTF-8.
-3. Otherwise, non-TTY stdin is read to completion.
-4. With one or more attachments, an empty message from any source is valid; otherwise, TTY stdin
-   with no other source or a whitespace-only resolved message fails.
-
-Positional content and `--file` are mutually exclusive. File and stdin content are not trimmed
-before sending.
+### Send output
 
 Text success examples:
 
@@ -134,8 +267,8 @@ Send succeeded: alerts:release
 Summary: Notification accepted.
 ```
 
-Text details come from the unified receipt summary. JSON preserves the complete redacted receipt;
-receipt fields other than `summary` depend on the adapter:
+Text output shows the receipt summary. JSON preserves the complete redacted receipt; fields other
+than `summary` depend on the adapter:
 
 ```json
 {
@@ -158,7 +291,7 @@ Request:
 ```
 
 Dry-run JSON sets `dryRun: true`; its receipt contains the adapter's prepared `request` but no
-platform `response`:
+response from the destination:
 
 ```json
 {
@@ -174,9 +307,8 @@ platform `response`:
 
 ## Adapter-specific behavior
 
-The CLI forwards the target, payload, attachments, and dry-run request through the common adapter
-contract. Configuration fields, payload interpretation, attachment support, preparation, transport,
-receipts, and platform errors are defined by the selected adapter:
+Configuration fields, attachment support, sending, output, and errors are defined by the selected
+adapter:
 
 - [Webhook adapter](webhook.md)
 - [NapCat adapter](napcat.md)
@@ -237,19 +369,4 @@ Exit statuses:
 - `0`: command completed successfully.
 - `2`: CLI usage, message validation, config loading/validation, adapter lookup, or target lookup
   failure.
-- `1`: send failure or unexpected internal/runtime failure.
-
-Common codes include `CLI_USAGE`, `CONFIG_NOT_FOUND`, `CONFIG_READ_FAILED`, `CONFIG_INVALID`,
-`ENV_MISSING`, `INVALID_CONFIG`, `UNKNOWN_ADAPTER`, `INVALID_TARGET`, `ADAPTER_NOT_FOUND`,
-`TARGET_NOT_FOUND`, `MESSAGE_SOURCE_CONFLICT`, `MESSAGE_FILE_FAILED`, `MESSAGE_EMPTY`,
-`INVALID_MESSAGE`, and `SEND_FAILED`. Adapter-specific send failures can be surfaced through
-`SEND_FAILED` messages.
-
-## Operational behavior
-
-Both commands destroy clients and close resources acquired during sending before exiting. A real
-send acquires destination resources lazily. Dry-run prepares the send without contacting the
-destination.
-
-Do not automatically retry sends. A transport failure can be ambiguous, and retrying may duplicate a
-notification.
+- `1`: send failure or unexpected failure.

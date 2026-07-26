@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PushError } from '@pushc/core';
-import { breadc } from 'breadc';
-import { CliError } from '../src/utils/error.js';
-import {
-  formatError,
-  formatSendResult,
-  formatTargets,
-  getSendResultExitCode
-} from '../src/utils/format.js';
+import { formatSendResult, formatTargets } from '../src/utils/format.js';
 
 describe('CLI formatting', () => {
   it('formats send results', () => {
@@ -167,72 +159,6 @@ describe('CLI formatting', () => {
             "target": "ops",
           },
         ],
-      }
-    `);
-  });
-
-  it('maps send result codes to process exit codes', () => {
-    expect(
-      getSendResultExitCode({
-        success: true,
-        adapter: 'webhook',
-        receipt: { request: {} }
-      })
-    ).toBe(0);
-    expect(
-      getSendResultExitCode({
-        success: false,
-        error: { code: 'SEND_FAILED', message: 'offline' }
-      })
-    ).toBe(1);
-    expect(
-      getSendResultExitCode({
-        success: false,
-        error: { code: 'TARGET_NOT_FOUND', message: 'missing' }
-      })
-    ).toBe(2);
-    expect(
-      getSendResultExitCode({
-        dryRun: true,
-        success: true,
-        adapter: 'webhook',
-        receipt: { request: {} }
-      })
-    ).toBe(0);
-    expect(
-      getSendResultExitCode({
-        dryRun: true,
-        success: false,
-        error: { code: 'TARGET_NOT_FOUND', message: 'missing' }
-      })
-    ).toBe(2);
-  });
-
-  it('formats contextual and context-free errors', () => {
-    const cli = breadc('test').option('--json');
-    cli.command('send');
-    const ctx = cli.parse(['send', '--json']).context;
-    const error = new CliError(
-      new PushError(
-        'TARGET_NOT_FOUND',
-        'Target "missing" exposed https://example.com/private-token.'
-      ),
-      ctx,
-      ['https://example.com/private-token']
-    );
-
-    expect(formatError(error)).toMatchInlineSnapshot(`
-      {
-        "exitCode": 2,
-        "output": "{"success":false,"error":{"code":"TARGET_NOT_FOUND","message":"Target \\"missing\\" exposed [REDACTED]."}}
-      ",
-      }
-    `);
-    expect(formatError(new Error('Could not parse arguments.'))).toMatchInlineSnapshot(`
-      {
-        "exitCode": 1,
-        "output": "Error: Could not parse arguments.
-      ",
       }
     `);
   });

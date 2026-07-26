@@ -1,11 +1,55 @@
-import { PushError } from '@pushc/core';
+import { PushError, type PushDryRunResult, type PushResult } from '@pushc/core';
 import { BreadcError, type Breadc } from 'breadc';
-import { ConfigError } from '../config.js';
-import { CliUsageError, MessageInputError } from '../input.js';
+
+import { redactForOutput } from './utils/redact.js';
+
+export type ConfigErrorCode =
+  'CONFIG_NOT_FOUND' | 'CONFIG_READ_FAILED' | 'CONFIG_INVALID' | 'ENV_MISSING';
+
+export class ConfigError extends Error {
+  readonly code: ConfigErrorCode;
+  override readonly cause?: unknown;
+
+  constructor(code: ConfigErrorCode, message: string, options: { cause?: unknown } = {}) {
+    super(message);
+    this.name = 'ConfigError';
+    this.code = code;
+    this.cause = options.cause;
+  }
+}
+
+export type MessageInputErrorCode =
+  'MESSAGE_SOURCE_CONFLICT' | 'MESSAGE_FILE_FAILED' | 'MESSAGE_INVALID' | 'MESSAGE_EMPTY';
+
+export class MessageInputError extends Error {
+  readonly code: MessageInputErrorCode;
+  override readonly cause?: unknown;
+
+  constructor(code: MessageInputErrorCode, message: string, options: { cause?: unknown } = {}) {
+    super(message);
+    this.name = 'MessageInputError';
+    this.code = code;
+    this.cause = options.cause;
+  }
+}
+
+export class CliUsageError extends Error {
+  readonly code = 'CLI_USAGE';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'CliUsageError';
+  }
+}
 
 export interface NormalizedError {
   code: string;
   message: string;
+}
+
+export interface CliFailure {
+  output: string;
+  exitCode: number;
 }
 
 export type CliContext = ReturnType<Breadc['parse']>['context'];
@@ -64,4 +108,20 @@ export function getErrorExitCode(error: unknown): number {
 
 export function getErrorCodeExitCode(code: string): number {
   return code === 'SEND_FAILED' || code === 'DESTROY_FAILED' || code === 'INTERNAL_ERROR' ? 1 : 2;
+}
+
+export function formatError(error: unknown): CliFailure {
+  const cause = unwrapCliError(error);
+  const normalized = redactForOutput(normalizeError(cause), cliErrorRedactions(error));
+
+  return {
+    output: isJsonCliError(error)
+      ? `${JSON.stringify({ success: false, error: normalized })}\n`
+      : `Error: ${normalized.message}\n`,
+    exitCode: getErrorExitCode(cause)
+  };
+}
+
+export function getSendResultExitCode(result: PushResult | PushDryRunResult): number {
+  return result.success ? 0 : getErrorCodeExitCode(result.error.code);
 }

@@ -6,15 +6,9 @@ import { formatDestination, PushError, type PushDryRunResult, type PushResult } 
 import packageJson from '../package.json' with { type: 'json' };
 
 import { makePushRuntime } from './client.js';
-import { parseParamEntries, resolveMessage } from './input.js';
-import { CliError, normalizeError } from './utils/error.js';
-import {
-  formatError,
-  formatSendResult,
-  formatTargets,
-  getSendResultExitCode,
-  type CliTargetSummary
-} from './utils/format.js';
+import { CliError, formatError, getSendResultExitCode, normalizeError } from './error.js';
+import { parseParamEntries, resolveMessageInput } from './input/index.js';
+import { formatSendResult, formatTargets, type CliTargetSummary } from './utils/format.js';
 
 const cli = breadc('pushc', {
   version: packageJson.version,
@@ -25,22 +19,32 @@ const cli = breadc('pushc', {
 
 cli
   .command('send [...content]', 'Send a message to a configured target')
-  .option('-t, --target <destination>', 'Select a destination as adapter[:target]')
-  .option('-f, --file <path>', 'Read message content from a UTF-8 file')
+  .option('-t, --target <destination>', 'Override the destination as adapter[:target]')
+  .option('-f, --file <path>', 'Read a JSON, TOML or text message file')
   .option('-a, --attachment [...source]', 'Attach local files or HTTP(S) URLs')
   .option('-p, --param [...entry]', 'Set string payload parameters as key=value')
   .option('--title <title>', 'Set an optional message title')
   .option('--dry-run', 'Prepare the final request without sending')
   .action(async (content, options, ctx) => {
-    let destination: string;
-    let param: ReturnType<typeof parseParamEntries>;
+    let input: Awaited<ReturnType<typeof resolveMessageInput>>;
 
     try {
-      if (typeof options.target !== 'string') {
+      const param = parseParamEntries(options.param);
+      const attachments =
+        options.attachment === undefined || options.attachment.length === 0
+          ? undefined
+          : options.attachment;
+      input = await resolveMessageInput({
+        content,
+        ...(options.file ? { file: options.file } : {}),
+        ...(typeof options.target === 'string' ? { target: options.target } : {}),
+        ...(options.title === undefined ? {} : { title: options.title }),
+        ...(param === undefined ? {} : { param }),
+        ...(attachments === undefined ? {} : { attachments })
+      });
+      if (input.target === undefined) {
         throw new PushError('INVALID_TARGET', 'The --target option is required.');
       }
-      destination = options.target;
-      param = parseParamEntries(options.param);
     } catch (error) {
       throw new CliError(error, ctx);
     }
@@ -55,27 +59,9 @@ cli
     try {
       let result: PushResult | PushDryRunResult;
       try {
-        const attachments =
-          options.attachment === undefined || options.attachment.length === 0
-            ? undefined
-            : options.attachment;
-
-        const message = await resolveMessage({
-          content,
-          ...(options.file ? { file: options.file } : {}),
-          allowEmpty: attachments !== undefined
-        });
-
-        const payload = {
-          message,
-          ...(attachments === undefined ? {} : { attachments }),
-          ...(options.title === undefined ? {} : { title: options.title }),
-          ...(param === undefined ? {} : { param })
-        };
-
         result = options.dryRun
-          ? await runtime.client.send(destination, payload, { dryRun: true })
-          : await runtime.client.send(destination, payload);
+          ? await runtime.client.send(input.target, input.payload, { dryRun: true })
+          : await runtime.client.send(input.target, input.payload);
       } catch (error) {
         await runtime.client.destroy().catch(() => undefined);
         throw error;

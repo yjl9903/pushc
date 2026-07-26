@@ -2,7 +2,7 @@ import { NapCatAdapter } from '@pushc/adapter-napcat';
 import { WebhookAdapter } from '@pushc/adapter-webhook';
 import { PushClient, PushError, type AnyPushAdapter } from '@pushc/core';
 
-import { errorMessage } from './utils/error.js';
+import { errorMessage } from './error.js';
 import {
   findConfigPath,
   loadConfig,

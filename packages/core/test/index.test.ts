@@ -4,9 +4,9 @@ import {
   PushClient,
   PushError,
   formatDestination,
+  type NormalizedPushPayload,
   type PushAdapterOperationOptions,
   type PushDispatchResult,
-  type PushPayload,
   type PushPreparedRequest
 } from '../src/index.js';
 
@@ -16,7 +16,7 @@ interface TestTarget {
 
 interface SentCall {
   readonly target: TestTarget;
-  readonly payload: PushPayload;
+  readonly payload: NormalizedPushPayload;
   readonly options: PushAdapterOperationOptions;
 }
 
@@ -69,9 +69,13 @@ class MemoryAdapter extends PushAdapter<
 
   protected async prepareRequest(
     target: TestTarget,
-    payload: PushPayload
+    payload: NormalizedPushPayload
   ): Promise<PushPreparedRequest<TestRequest, TestRequest>> {
-    const request = { channel: target.channel, message: payload.message };
+    const message = payload.content
+      .filter((item) => item.type === 'text')
+      .map((item) => item.text)
+      .join('');
+    const request = { channel: target.channel, message };
     this.prepared.set(request, { target, payload });
     return { receiptRequest: request, transportRequest: request };
   }
@@ -152,16 +156,16 @@ describe('PushTargets', () => {
     const adapter = new MemoryAdapter();
     adapter.targets.register('ops', { channel: 'ops' });
 
-    await expect(adapter.send(undefined, { message: 'default' })).resolves.toMatchObject({
+    await expect(adapter.send(undefined, { content: 'default' })).resolves.toMatchObject({
       success: true,
       receipt: { response: { id: '#default:default' } }
     });
-    await expect(adapter.send('ops', { message: 'named' })).resolves.toMatchObject({
+    await expect(adapter.send('ops', { content: 'named' })).resolves.toMatchObject({
       success: true,
       receipt: { response: { id: '#ops:named' } }
     });
     await expect(
-      adapter.send({ channel: 'preview' }, { message: 'temporary' })
+      adapter.send({ channel: 'preview' }, { content: 'temporary' })
     ).resolves.toMatchObject({
       success: true,
       receipt: { response: { id: '#preview:temporary' } }
@@ -222,7 +226,7 @@ describe('send boundaries', () => {
   it('supports string and object destinations with the three-argument API', async () => {
     const client = createClient();
 
-    await expect(client.send('memory', { message: 'default' })).resolves.toMatchInlineSnapshot(`
+    await expect(client.send('memory', { content: 'default' })).resolves.toMatchInlineSnapshot(`
       {
         "adapter": "memory",
         "receipt": {
@@ -239,7 +243,7 @@ describe('send boundaries', () => {
     `);
     await expect(
       client.send('memory:ops', {
-        message: 'ready',
+        content: 'ready',
         title: '',
         param: { 'deploy.group': 'production' }
       })
@@ -260,7 +264,7 @@ describe('send boundaries', () => {
       }
     `);
     await expect(
-      client.send({ adapter: 'memory', target: { channel: 'preview' } }, { message: 'test' })
+      client.send({ adapter: 'memory', target: { channel: 'preview' } }, { content: 'test' })
     ).resolves.toMatchInlineSnapshot(`
       {
         "adapter": "memory",
@@ -290,15 +294,19 @@ describe('send boundaries', () => {
 
     await adapter.send(
       undefined,
-      { message: ' hello ', attachments, title: '', param },
+      { content: ' hello ', attachments, title: '', param },
       { signal, dryRun: false }
     );
     attachments.push('later.txt');
 
     const context = adapter.contexts[0]!;
-    expect(context.payload.message).toBe(' hello ');
-    expect(context.payload.attachments).toEqual(['photo.png', 'report.pdf']);
-    expect(Object.isFrozen(context.payload.attachments)).toBe(true);
+    expect(context.payload.content).toEqual([
+      { type: 'attachment', source: 'photo.png' },
+      { type: 'attachment', source: 'report.pdf' },
+      { type: 'text', text: ' hello ' }
+    ]);
+    expect(context.payload.content.every(Object.isFrozen)).toBe(true);
+    expect(Object.isFrozen(context.payload.content)).toBe(true);
     expect(context.payload.title).toBe('');
     expect(context.payload.param).toMatchInlineSnapshot(`
       {
@@ -313,20 +321,69 @@ describe('send boundaries', () => {
     expect(Object.isFrozen(context.options)).toBe(true);
   });
 
+  it('treats nullish params as omitted', async () => {
+    const adapter = new MemoryAdapter();
+
+    await adapter.send(undefined, { content: 'null', param: null });
+    await adapter.send(undefined, { content: 'undefined', param: undefined });
+
+    expect(adapter.contexts[0]?.payload).not.toHaveProperty('param');
+    expect(adapter.contexts[1]?.payload).not.toHaveProperty('param');
+  });
+
+  it('normalizes string arrays and preserves explicit AST order', async () => {
+    const adapter = new MemoryAdapter();
+    const ast = [
+      { type: 'text' as const, text: 'before' },
+      {
+        type: 'attachment' as const,
+        source: 'report.bin',
+        name: 'report.pdf',
+        mediaType: 'application/pdf'
+      },
+      { type: 'text' as const, text: 'after' }
+    ];
+
+    await adapter.send(undefined, { content: ['first', 'second'] });
+    await adapter.send(undefined, { content: ast });
+    ast[0] = { type: 'text', text: 'changed' };
+
+    expect(adapter.contexts[0]?.payload.content).toEqual([
+      { type: 'text', text: 'first' },
+      { type: 'text', text: 'second' }
+    ]);
+    expect(adapter.contexts[1]?.payload.content).toEqual([
+      { type: 'text', text: 'before' },
+      {
+        type: 'attachment',
+        source: 'report.bin',
+        name: 'report.pdf',
+        mediaType: 'application/pdf'
+      },
+      { type: 'text', text: 'after' }
+    ]);
+    expect(adapter.contexts[1]?.payload.content.every(Object.isFrozen)).toBe(true);
+  });
+
   it.each([
-    [{ message: '' }],
-    [{ message: '   ' }],
-    [{ message: '', attachments: [] }],
-    [{ message: '', attachments: [''] }],
-    [{ message: '', attachments: [1] }],
-    [{ message: 1 }],
-    [{ message: 'ok', title: null }],
-    [{ message: 'ok', param: [] }],
-    [{ message: 'ok', param: { bad: 1 } }],
-    [{ message: 'ok', param: { 'bad key': 'value' } }],
-    [{ message: 'ok', unknown: true }],
-    [JSON.parse('{"message":"ok","__proto__":true}')],
-    [{ message: 'ok', param: JSON.parse('{"__proto__":"value"}') }]
+    [{ content: '' }],
+    [{ content: '   ' }],
+    [{ content: [], attachments: [] }],
+    [{ content: '', attachments: [''] }],
+    [{ content: '', attachments: [1] }],
+    [{ content: 1 }],
+    [{ content: 'ok', title: null }],
+    [{ content: 'ok', param: [] }],
+    [{ content: 'ok', param: { bad: 1 } }],
+    [{ content: 'ok', param: { 'bad key': 'value' } }],
+    [{ content: 'ok', unknown: true }],
+    [JSON.parse('{"content":"ok","__proto__":true}')],
+    [{ content: 'ok', param: JSON.parse('{"__proto__":"value"}') }],
+    [{ content: ['ok', { type: 'text', text: 'mixed' }] }],
+    [{ content: [{ type: 'napcat:at', qq: 'all' }] }],
+    [{ content: [{ type: 'attachment', source: '' }] }],
+    [{ content: [{ type: 'attachment', source: 'x', mediaType: 'invalid' }] }],
+    [{ content: [{ type: 'text', text: 'ok' }], attachments: [] }]
   ])('rejects invalid payload %#', async (payload) => {
     await expect(new MemoryAdapter().send(undefined, payload as never)).resolves.toMatchObject({
       success: false,
@@ -334,38 +391,97 @@ describe('send boundaries', () => {
     });
   });
 
+  it('rejects sparse content and attachment arrays before adapter preparation', async () => {
+    const sparseContent = new Array(2);
+    sparseContent[1] = { type: 'attachment', source: 'photo.png' };
+    const sparseAttachments = new Array(2);
+    sparseAttachments[0] = 'photo.png';
+
+    for (const payload of [
+      { content: sparseContent },
+      { content: 'caption', attachments: sparseAttachments }
+    ]) {
+      const adapter = new MemoryAdapter();
+      await expect(adapter.send(undefined, payload as never)).resolves.toMatchObject({
+        success: false,
+        error: { code: 'INVALID_MESSAGE' }
+      });
+      expect(adapter.parse).not.toHaveBeenCalled();
+      expect(adapter.contexts).toHaveLength(0);
+    }
+  });
+
+  it('rejects inherited required node fields before adapter preparation', async () => {
+    const inheritedNode = Object.create({
+      type: 'attachment',
+      source: 'package.json',
+      name: 'leak.json'
+    });
+    const inheritedSource = Object.assign(Object.create({ source: 'package.json' }), {
+      type: 'attachment'
+    });
+
+    for (const content of [[inheritedNode], [inheritedSource]]) {
+      const adapter = new MemoryAdapter();
+      await expect(adapter.send(undefined, { content } as never)).resolves.toMatchObject({
+        success: false,
+        error: { code: 'INVALID_MESSAGE' }
+      });
+      expect(adapter.parse).not.toHaveBeenCalled();
+      expect(adapter.contexts).toHaveLength(0);
+    }
+  });
+
+  it('treats undefined attachments as omitted', async () => {
+    const adapter = new MemoryAdapter();
+
+    await adapter.send(undefined, { content: 'shortcut', attachments: undefined });
+    await adapter.send(undefined, {
+      content: [{ type: 'text', text: 'ast' }],
+      attachments: undefined
+    });
+
+    expect(adapter.contexts.map(({ payload }) => payload.content)).toEqual([
+      [{ type: 'text', text: 'shortcut' }],
+      [{ type: 'text', text: 'ast' }]
+    ]);
+  });
+
   it('accepts attachment-only payloads and normalizes empty attachment arrays away', async () => {
     const adapter = new MemoryAdapter();
 
     await expect(
-      adapter.send(undefined, { message: '', attachments: ['photo.png'] })
+      adapter.send(undefined, { content: '', attachments: ['photo.png'] })
     ).resolves.toMatchObject({
       success: true,
       receipt: { request: { channel: '#default', message: '' } }
     });
-    expect(adapter.contexts[0]?.payload.attachments).toEqual(['photo.png']);
+    expect(adapter.contexts[0]?.payload.content).toEqual([
+      { type: 'attachment', source: 'photo.png' },
+      { type: 'text', text: '' }
+    ]);
 
-    await adapter.send(undefined, { message: 'hello', attachments: [] });
-    expect(adapter.contexts[1]?.payload).not.toHaveProperty('attachments');
+    await adapter.send(undefined, { content: 'hello', attachments: [] });
+    expect(adapter.contexts[1]?.payload.content).toEqual([{ type: 'text', text: 'hello' }]);
   });
 
   it('rejects invalid options and pre-cancelled signals before target parsing', async () => {
     const adapter = new MemoryAdapter();
     await expect(
-      adapter.send(undefined, { message: 'ok' }, { signal: {} as AbortSignal })
+      adapter.send(undefined, { content: 'ok' }, { signal: {} as AbortSignal })
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
-    await expect(adapter.send(undefined, { message: 'ok' }, null as never)).resolves.toMatchObject({
+    await expect(adapter.send(undefined, { content: 'ok' }, null as never)).resolves.toMatchObject({
       success: false,
       error: { code: 'INVALID_SEND_OPTIONS' }
     });
     await expect(
-      adapter.send(undefined, { message: 'ok' }, { unknown: true } as never)
+      adapter.send(undefined, { content: 'ok' }, { unknown: true } as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
     await expect(
-      adapter.send(undefined, { message: 'ok' }, JSON.parse('{"__proto__":true}') as never)
+      adapter.send(undefined, { content: 'ok' }, JSON.parse('{"__proto__":true}') as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
     await expect(
-      adapter.send(undefined, { message: 'ok' }, { dryRun: 'true' } as never)
+      adapter.send(undefined, { content: 'ok' }, { dryRun: 'true' } as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
 
     const reason = new Error('cancelled');
@@ -376,7 +492,7 @@ describe('send boundaries', () => {
       removeEventListener: vi.fn()
     } as unknown as AbortSignal;
     adapter.parse.mockClear();
-    await expect(adapter.send(undefined, { message: 'ok' }, { signal })).resolves.toMatchObject({
+    await expect(adapter.send(undefined, { content: 'ok' }, { signal })).resolves.toMatchObject({
       success: false,
       error: { code: 'SEND_FAILED', message: 'Message sending was aborted.' }
     });
@@ -386,7 +502,7 @@ describe('send boundaries', () => {
   it('preserves prepared requests when cancellation prevents dispatch', async () => {
     const adapter = new MemoryAdapter();
     const sendController = new AbortController();
-    const sending = adapter.send(undefined, { message: 'send' }, { signal: sendController.signal });
+    const sending = adapter.send(undefined, { content: 'send' }, { signal: sendController.signal });
     sendController.abort(new Error('cancelled after preparation'));
 
     await expect(sending).resolves.toEqual({
@@ -406,7 +522,7 @@ describe('send boundaries', () => {
     const dryRunController = new AbortController();
     const preparing = adapter.send(
       undefined,
-      { message: 'dry-run' },
+      { content: 'dry-run' },
       { dryRun: true, signal: dryRunController.signal }
     );
     dryRunController.abort(new Error('cancelled after preparation'));
@@ -437,20 +553,20 @@ describe('send boundaries', () => {
     { adapter: 'memory', extra: true },
     { adapter: 'memory', target: [] }
   ])('rejects invalid destination %#', async (destination) => {
-    const result = await createClient().send(destination as never, { message: 'ok' });
+    const result = await createClient().send(destination as never, { content: 'ok' });
     expect(result).toMatchObject({ success: false, error: { code: 'INVALID_TARGET' } });
     expect(result).not.toHaveProperty('adapter');
     expect(result).not.toHaveProperty('target');
   });
 
   it('distinguishes missing adapters and normalizes concrete failures', async () => {
-    await expect(createClient().send('missing', { message: 'ok' })).resolves.toMatchObject({
+    await expect(createClient().send('missing', { content: 'ok' })).resolves.toMatchObject({
       success: false,
       adapter: 'missing',
       error: { code: 'ADAPTER_NOT_FOUND' }
     });
 
-    await expect(createClient().send('memory:missing', { message: 'ok' })).resolves.toEqual({
+    await expect(createClient().send('memory:missing', { content: 'ok' })).resolves.toEqual({
       success: false,
       adapter: 'memory',
       target: 'missing',
@@ -460,7 +576,7 @@ describe('send boundaries', () => {
       }
     });
 
-    await expect(createClient().send('memory:ops', { message: '' })).resolves.toEqual({
+    await expect(createClient().send('memory:ops', { content: '' })).resolves.toEqual({
       success: false,
       adapter: 'memory',
       target: 'ops',
@@ -479,7 +595,7 @@ describe('send boundaries', () => {
       }
     );
     await expect(
-      createClient(adapter).send('memory:ops', { message: 'ok' })
+      createClient(adapter).send('memory:ops', { content: 'ok' })
     ).resolves.toMatchObject({
       success: false,
       adapter: 'memory',
@@ -501,7 +617,7 @@ describe('send boundaries', () => {
       }
     );
     await expect(
-      createClient(adapterFailure).send('memory:ops', { message: 'hello' })
+      createClient(adapterFailure).send('memory:ops', { content: 'hello' })
     ).resolves.toEqual({
       success: false,
       adapter: 'memory',
@@ -514,7 +630,7 @@ describe('send boundaries', () => {
     await expect(
       createClient(
         new MemoryAdapter('#', {}, { send: async () => Promise.reject(new Error('unexpected')) })
-      ).send('memory:ops', { message: 'hello' })
+      ).send('memory:ops', { content: 'hello' })
     ).resolves.toEqual({
       success: false,
       adapter: 'memory',
@@ -537,7 +653,7 @@ describe('send boundaries', () => {
       }
     );
 
-    await expect(createClient(adapter).send('memory:ops', { message: 'initial' })).resolves.toEqual(
+    await expect(createClient(adapter).send('memory:ops', { content: 'initial' })).resolves.toEqual(
       {
         success: true,
         adapter: 'memory',
@@ -579,7 +695,7 @@ describe('send boundaries', () => {
       } as never);
     const client = createClient(adapter);
 
-    await expect(client.send('memory', { message: 'hello' })).resolves.toEqual({
+    await expect(client.send('memory', { content: 'hello' })).resolves.toEqual({
       success: true,
       adapter: 'memory',
       receipt
@@ -592,7 +708,7 @@ describe('send boundaries', () => {
             channel: '#preview'
           }
         },
-        { message: 'hello' }
+        { content: 'hello' }
       )
     ).resolves.toEqual({
       success: false,
@@ -612,19 +728,19 @@ describe('dry-run send boundaries', () => {
     adapter.targets.register('ops', { channel: 'ops' });
 
     await expect(
-      adapter.send(undefined, { message: 'default' }, { dryRun: true })
+      adapter.send(undefined, { content: 'default' }, { dryRun: true })
     ).resolves.toEqual({
       dryRun: true,
       success: true,
       receipt: { request: { channel: '#default', message: 'default' } }
     });
-    await expect(adapter.send('ops', { message: 'named' }, { dryRun: true })).resolves.toEqual({
+    await expect(adapter.send('ops', { content: 'named' }, { dryRun: true })).resolves.toEqual({
       dryRun: true,
       success: true,
       receipt: { request: { channel: '#ops', message: 'named' } }
     });
     await expect(
-      adapter.send({ channel: 'temporary' }, { message: 'preview' }, { dryRun: true })
+      adapter.send({ channel: 'temporary' }, { content: 'preview' }, { dryRun: true })
     ).resolves.toEqual({
       dryRun: true,
       success: true,
@@ -636,7 +752,7 @@ describe('dry-run send boundaries', () => {
   it('adds destination context and preserves dry-run failures', async () => {
     const client = createClient();
     await expect(
-      client.send('memory:ops', { message: 'hello' }, { dryRun: true })
+      client.send('memory:ops', { content: 'hello' }, { dryRun: true })
     ).resolves.toEqual({
       dryRun: true,
       success: true,
@@ -645,7 +761,7 @@ describe('dry-run send boundaries', () => {
       receipt: { request: { channel: '#ops', message: 'hello' } }
     });
     await expect(
-      client.send('memory:missing', { message: 'hello' }, { dryRun: true })
+      client.send('memory:missing', { content: 'hello' }, { dryRun: true })
     ).resolves.toEqual({
       dryRun: true,
       success: false,
@@ -657,7 +773,7 @@ describe('dry-run send boundaries', () => {
       }
     });
     await expect(
-      client.send('missing', { message: 'hello' }, { dryRun: true })
+      client.send('missing', { content: 'hello' }, { dryRun: true })
     ).resolves.toMatchObject({
       dryRun: true,
       success: false,
@@ -665,14 +781,14 @@ describe('dry-run send boundaries', () => {
       error: { code: 'ADAPTER_NOT_FOUND' }
     });
     await expect(
-      client.send('bad.name', { message: 'hello' }, { dryRun: true })
+      client.send('bad.name', { content: 'hello' }, { dryRun: true })
     ).resolves.toMatchObject({
       dryRun: true,
       success: false,
       error: { code: 'INVALID_TARGET' }
     });
     await expect(
-      client.send('memory', { message: '   ' }, { dryRun: true })
+      client.send('memory', { content: '   ' }, { dryRun: true })
     ).resolves.toMatchObject({
       dryRun: true,
       success: false,
@@ -684,7 +800,7 @@ describe('dry-run send boundaries', () => {
   it('rejects dry runs after client destruction', async () => {
     const client = createClient();
     await client.destroy();
-    await expect(client.send('memory', { message: 'hello' }, { dryRun: true })).resolves.toEqual({
+    await expect(client.send('memory', { content: 'hello' }, { dryRun: true })).resolves.toEqual({
       dryRun: true,
       success: false,
       error: {
@@ -718,7 +834,7 @@ describe('adapter registry lifecycle', () => {
     const client = createClient(new MemoryAdapter('#', {}, { destroy }));
     await Promise.all([client.destroy(), client.destroy()]);
     expect(destroy).toHaveBeenCalledOnce();
-    await expect(client.send('memory', { message: 'ok' })).resolves.toMatchObject({
+    await expect(client.send('memory', { content: 'ok' })).resolves.toMatchObject({
       success: false,
       error: { code: 'CLIENT_DESTROYED' }
     });

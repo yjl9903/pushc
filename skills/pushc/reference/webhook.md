@@ -8,7 +8,7 @@ attachment, dry-run, receipt, or error behavior.
 - [Configuration](#configuration)
 - [Payload templates](#payload-templates)
 - [Request and attachment behavior](#request-and-attachment-behavior)
-- [Dry run, dispatch, and receipts](#dry-run-dispatch-and-receipts)
+- [Dry run, sending, and receipts](#dry-run-sending-and-receipts)
 
 ## Configuration
 
@@ -70,14 +70,16 @@ name, such as `deploy`. Defining a single named target does not make it the defa
 
 Templates are supported in `request.url`, header values, and string values inside `request.body`:
 
-- `{{message}}` uses the message body.
+- `{{message}}` uses the message text. A structured message with multiple text nodes joins them in
+  order without a separator.
 - `{{title}}` uses the optional title.
-- `{{param.key}}` uses a string supplied with `--param key=value`.
+- `{{param.key}}` uses the effective message param after structured-message values and CLI
+  overrides are merged.
 - `{{title:-pushc}}` and equivalent expressions use the fallback when the value is missing or empty.
 
-The scanner makes one left-to-right pass. Replacements and fallbacks are not rendered again.
-Unknown, invalid, or unclosed expressions remain literal. Prefix an opening expression with `\` to
-escape it. Templates do not perform URL or JSON encoding.
+Template substitutions run once; replacements and fallbacks are not processed again. Unknown,
+invalid, or unclosed expressions remain literal. Prefix an opening expression with `\` to escape it.
+Templates do not perform URL or JSON encoding.
 
 Only template positions consume `message`, `title`, and params. A field omitted from the configured
 request is not added automatically.
@@ -85,7 +87,7 @@ request is not added automatically.
 ## Request and attachment behavior
 
 The adapter renders the selected request, then validates the final URL, method, headers, content
-type, and body before dispatch:
+type, and body before sending:
 
 - JSON content serializes a JSON-shaped body. Text content requires a string body.
 - A body with no explicit Content-Type receives the configured or default content type.
@@ -93,24 +95,24 @@ type, and body before dispatch:
 - `GET` and `HEAD` reject a configured body.
 - The final request URL must remain on the top-level URL's origin and contain no credentials.
 
-Webhook destinations do not support attachments. Any non-empty `--attachment` list fails with
-`INVALID_MESSAGE`; attachments are never ignored or converted to multipart data.
+Webhook destinations do not support attachments, whether passed with `--attachment` or declared as
+an attachment node. They fail with `INVALID_MESSAGE` and are never ignored or converted to multipart
+data.
 
-## Dry run, dispatch, and receipts
+## Dry run, sending, and receipts
 
-`--dry-run` renders and validates the complete request without starting a timeout or calling the
-endpoint. Its receipt contains the prepared request and no response. A successful dry run confirms
-local preparation only.
+`--dry-run` renders and validates the complete request without calling the endpoint. Its receipt
+contains the prepared request and no response. A successful dry run confirms local preparation only.
 
-A real send starts the configured timeout immediately before dispatch and performs one Fetch
-request. HTTP status 200 through 299 is successful. The adapter does not retry.
+A real send performs one HTTP request. HTTP status 200 through 299 is successful. The adapter does
+not retry.
 
 The receipt request contains the final URL, method, normalized headers, content type, timeout, and
 rendered body. CLI output redacts configuration-derived secrets. The response receipt contains the
 status, sanitized headers, and a best-effort parsed JSON body. Summaries identify the HTTP method,
 destination host, and status.
 
-Non-2xx responses, timeouts, cancellation, missing Fetch support, and transport errors return a
-failed send with every available receipt field. Request construction and adapter configuration
-failures use `INVALID_CONFIG`; dispatch failures surface through `SEND_FAILED`. Do not retry
-automatically because an ambiguous transport failure may have reached the endpoint.
+Non-2xx responses, timeouts, cancellation, and network errors return a failed send with every
+available receipt field. Request validation and adapter configuration failures use `INVALID_CONFIG`;
+HTTP request failures surface through `SEND_FAILED`. Do not retry automatically because an
+ambiguous network failure may have reached the endpoint.

@@ -63,7 +63,7 @@
 export interface PushPayload {
   readonly message: string;
   readonly title?: string;
-  readonly param?: Readonly<Record<string, string>>;
+  readonly param?: Readonly<Record<string, string>> | null;
 }
 
 export interface PushSendOptions {
@@ -82,7 +82,8 @@ export type PushDestination =
 ```
 
 base adapter 校验 payload 后直接把安全复制的 `PushPayload` 传给 concrete adapter；缺省
-`param` 保持 `undefined`，需要模板上下文的 adapter 将其视为空 Record。后续新增公共发送
+缺省、`undefined` 或 `null` 的 `param` normalize 后保持 `undefined`，需要模板上下文的
+adapter 将其视为空 Record。后续新增公共发送
 字段加入 `PushPayload`，不混入 `param`。
 
 ```ts
@@ -154,9 +155,11 @@ client.send(destination, payload, options?)
 
 - `message` 必须是 string，且 trim 后非空；校验不修改原字符串。
 - `title` 存在时必须是 string；空字符串合法，并在模板 `:-` 中视为无值。
-- `param` 必须是 plain object，每个 value 必须是 string，未知 payload 字段直接拒绝。
+- 非 nullish `param` 必须是 plain object，每个 value 必须是 string，未知 payload 字段直接
+  拒绝。
 - `param` key 必须匹配 `[A-Za-z0-9][A-Za-z0-9_.-]*`，大小写保留并区分大小写。
-- 缺省 param 保持 `undefined`；非空 param 复制为冻结的 null-prototype Record。
+- 缺省、`undefined` 或 `null` param 保持 `undefined`；object param 复制为冻结的
+  null-prototype Record。
 - param 查询必须使用 `Object.hasOwn()`，不得从 prototype chain 读取 `constructor`、
   `toString` 等名称。
 - payload 校验失败映射为 `PushError('INVALID_MESSAGE')`，不暴露 `ZodError`。

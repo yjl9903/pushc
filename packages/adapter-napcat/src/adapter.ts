@@ -1,10 +1,9 @@
 import { addAbortListener } from 'node:events';
 import {
   PushAdapter,
+  type NormalizedPushPayload,
   type PushAdapterOperationOptions,
-  type PushDispatchResult,
-  type PushPayload,
-  type PushPreparedRequest
+  type PushDispatchResult
 } from '@pushc/core';
 
 import type {
@@ -18,7 +17,11 @@ import type {
 
 import { NapCatConnection } from './client.js';
 import { parseNapCatConfig } from './config.js';
-import { prepareNapCatRequest, updateNapCatRemoteMediaTypes } from './request.js';
+import {
+  prepareNapCatRequest,
+  updateNapCatRemoteMediaTypes,
+  type PreparedNapCatRequest
+} from './request.js';
 import { napCatTargetDefaults, parseNapCatTarget, parseNapCatTargetPartial } from './target.js';
 
 export class NapCatAdapter extends PushAdapter<
@@ -48,9 +51,9 @@ export class NapCatAdapter extends PushAdapter<
 
   protected async prepareRequest(
     target: NapCatTargetConfig,
-    payload: PushPayload,
+    payload: NormalizedPushPayload,
     options: PushAdapterOperationOptions
-  ): Promise<PushPreparedRequest<NapCatRequestReceipt, NapCatTransportRequest>> {
+  ): Promise<PreparedNapCatRequest> {
     return await prepareNapCatRequest(
       target,
       payload,
@@ -60,7 +63,7 @@ export class NapCatAdapter extends PushAdapter<
   }
 
   protected async dispatchRequest(
-    prepared: PushPreparedRequest<NapCatRequestReceipt, NapCatTransportRequest>,
+    prepared: PreparedNapCatRequest,
     options: PushAdapterOperationOptions
   ): Promise<PushDispatchResult<NapCatRequestReceipt, NapCatResponseReceipt>> {
     const timeoutSignal = AbortSignal.timeout(this.config.timeout_ms);

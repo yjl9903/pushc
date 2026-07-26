@@ -1,7 +1,6 @@
 # Pushc configuration
 
-Read this guide when pushc has no usable configuration or reports configuration or adapter
-initialization errors.
+Read this guide when pushc has no usable configuration or reports configuration or adapter errors.
 
 ## Choose the config location
 
@@ -48,15 +47,6 @@ in `config.toml`.
 Using `${VARIABLE_NAME}` does not by itself mean a value is secret. Tokens, keys, passwords,
 credential-bearing URLs, and private endpoints must stay outside `config.toml`. Ordinary connection
 settings and destination identifiers may be written directly in `config.toml` when the user prefers.
-The bundled example keeps some non-secret values in environment variables only to make the same
-template reusable across users and machines.
-
-Example `.env`:
-
-```dotenv
-SERVICE_ENDPOINT=https://example.com/private-endpoint
-SERVICE_TOKEN=replace-with-the-real-token
-```
 
 ## Validate
 

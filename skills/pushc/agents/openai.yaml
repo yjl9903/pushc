@@ -1,4 +1,4 @@
 interface:
   display_name: 'Pushc'
-  short_description: 'Configure pushc and send notifications from the CLI'
-  default_prompt: 'Use $pushc to configure a notification target and send messages.'
+  short_description: 'Configure pushc or send notifications'
+  default_prompt: 'Use $pushc to configure pushc or send a notification.'

@@ -4,7 +4,7 @@ import { basename, posix, resolve } from 'node:path';
 
 import mime from 'mime';
 
-import { PushError } from '@pushc/core';
+import { PushError, type PushAttachmentContent } from '@pushc/core';
 
 import type {
   NapCatAttachmentReceiptSegment,
@@ -18,7 +18,7 @@ export interface PreparedNapCatAttachment {
 }
 
 export async function prepareNapCatAttachments(
-  sources: readonly string[],
+  attachments: readonly PushAttachmentContent[],
   maxBytes: number,
   signal?: AbortSignal
 ): Promise<readonly PreparedNapCatAttachment[]> {
@@ -26,16 +26,17 @@ export async function prepareNapCatAttachments(
   let actualLocalBytes = 0;
   const baseDirectory = process.cwd();
 
-  for (const input of sources) {
+  for (const attachment of attachments) {
     assertNotAborted(signal);
-    const remote = parseRemoteAttachment(input);
+    const remote = parseRemoteAttachment(attachment.source);
     if (remote !== undefined) {
-      prepared.push(prepareRemoteAttachment(remote));
+      prepared.push(prepareRemoteAttachment(remote, attachment));
       continue;
     }
 
-    const path = resolve(baseDirectory, input);
-    const name = basename(path);
+    const path = resolve(baseDirectory, attachment.source);
+    const name =
+      attachment.name === undefined ? basename(path) : validateAttachmentName(attachment.name);
     const contents = await readLocalAttachment(
       path,
       name,
@@ -45,7 +46,7 @@ export async function prepareNapCatAttachments(
     );
     actualLocalBytes += contents.byteLength;
 
-    const mediaType = mediaTypeFor(name);
+    const mediaType = attachment.mediaType ?? mediaTypeFor(name);
     const type = napCatAttachmentSegmentType(mediaType);
     const fileValue = `base64://${contents.toString('base64')}`;
     prepared.push({
@@ -94,9 +95,13 @@ function parseRemoteAttachment(input: string): URL | undefined {
   return url;
 }
 
-function prepareRemoteAttachment(url: URL): PreparedNapCatAttachment {
-  const name = remoteName(url);
-  const mediaType = mediaTypeFor(name);
+function prepareRemoteAttachment(
+  url: URL,
+  attachment: PushAttachmentContent
+): PreparedNapCatAttachment {
+  const name =
+    attachment.name === undefined ? remoteName(url) : validateAttachmentName(attachment.name);
+  const mediaType = attachment.mediaType ?? mediaTypeFor(name);
   const type = napCatAttachmentSegmentType(mediaType);
 
   return {
@@ -138,14 +143,22 @@ function remoteName(url: URL): string {
   return name;
 }
 
+function validateAttachmentName(name: string): string {
+  if (name === '.' || name === '..' || /[\\/\u0000-\u001f\u007f]/.test(name)) {
+    throw invalidAttachment('Attachment names must be safe filenames.');
+  }
+  return name;
+}
+
 function mediaTypeFor(name: string): string {
   return mime.getType(name) ?? 'application/octet-stream';
 }
 
 export function napCatAttachmentSegmentType(mediaType: string): NapCatAttachmentSegmentType {
-  if (mediaType.startsWith('image/')) return 'image';
-  if (mediaType.startsWith('audio/')) return 'record';
-  if (mediaType.startsWith('video/')) return 'video';
+  const normalizedMediaType = mediaType.toLowerCase();
+  if (normalizedMediaType.startsWith('image/')) return 'image';
+  if (normalizedMediaType.startsWith('audio/')) return 'record';
+  if (normalizedMediaType.startsWith('video/')) return 'video';
   return 'file';
 }
 

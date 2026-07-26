@@ -90,11 +90,36 @@ pushc send --target bark \
   "Production deployment succeeded"
 ```
 
-Read a longer message from a UTF-8 file:
+Read a literal UTF-8 text file:
 
 ```bash
 pushc send --target qq:qq-group --file ./report.txt
 ```
+
+JSON and TOML files can describe the target and ordered content:
+
+```toml
+target = "qq:qq-group"
+title = "Build completed"
+
+[param]
+group = "message-default"
+environment = "production"
+
+[[content]]
+type = "text"
+text = "Report:"
+
+[[content]]
+type = "attachment"
+source = "./report.pdf"
+```
+
+```bash
+pushc send --file ./message.toml --param group=releases
+```
+
+CLI params override matching message-file params; `environment` remains `production`.
 
 Send local or remote attachments:
 
@@ -147,7 +172,7 @@ client.adapters.register(
 
 await client.send('bark', {
   title: 'Production',
-  message: 'Build completed',
+  content: 'Build completed',
   param: { group: 'deployments' }
 });
 

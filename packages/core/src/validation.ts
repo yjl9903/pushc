@@ -1,64 +1,59 @@
 import { z } from 'zod';
 
+import { normalizeContent } from './content.js';
 import { PushError } from './error.js';
-import type { PushPayload, PushSendOptions } from './types.js';
+import type { NormalizedPushPayload, PushSendOptions } from './types.js';
 
 const PARAM_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
-const PAYLOAD_FIELDS = new Set(['message', 'attachments', 'title', 'param']);
+const PAYLOAD_FIELDS = new Set(['content', 'attachments', 'title', 'param']);
 const SEND_OPTION_FIELDS = new Set(['signal', 'dryRun']);
 
 const paramSchema = z.record(z.string().regex(PARAM_KEY_PATTERN), z.string());
-const payloadSchema = z.strictObject({
-  message: z.string(),
-  attachments: z.array(z.string().refine((value) => value.trim().length > 0)).optional(),
+const metadataSchema = z.strictObject({
   title: z.string().optional(),
-  param: paramSchema.optional()
+  param: paramSchema.nullish()
 });
-export function normalizePayload(input: unknown): PushPayload {
+
+export function normalizePayload(input: unknown): NormalizedPushPayload {
   try {
+    if (!isRecord(input)) throw invalidPayload();
     assertAllowedFields(input, PAYLOAD_FIELDS);
     if (
-      isRecord(input) &&
       isRecord(input.param) &&
       Object.keys(input.param).some((key) => !PARAM_KEY_PATTERN.test(key))
     ) {
-      throw new PushError('INVALID_MESSAGE', 'Invalid push payload.');
+      throw invalidPayload();
     }
 
-    const result = payloadSchema.safeParse(input);
-    if (!result.success) {
-      throw new PushError('INVALID_MESSAGE', 'Invalid push payload.', {
-        cause: result.error
-      });
-    }
-    if (
-      result.data.message.trim().length === 0 &&
-      (result.data.attachments === undefined || result.data.attachments.length === 0)
-    ) {
-      throw new PushError('INVALID_MESSAGE', 'Invalid push payload.');
-    }
+    const metadata = metadataSchema.safeParse({
+      ...(Object.hasOwn(input, 'title') ? { title: input.title } : {}),
+      ...(Object.hasOwn(input, 'param') ? { param: input.param } : {})
+    });
+    if (!metadata.success) throw invalidPayload(metadata.error);
 
     const param =
-      result.data.param === undefined
+      metadata.data.param == null
         ? undefined
         : Object.freeze(
-            Object.assign(Object.create(null) as Record<string, string>, result.data.param)
+            Object.assign(Object.create(null) as Record<string, string>, metadata.data.param)
           );
-    const attachments =
-      result.data.attachments === undefined || result.data.attachments.length === 0
-        ? undefined
-        : Object.freeze([...result.data.attachments]);
+
+    const hasAttachments = input.attachments !== undefined;
+    const content = normalizeContent(input.content, input.attachments, hasAttachments);
 
     return Object.freeze({
-      message: result.data.message,
-      ...(attachments === undefined ? {} : { attachments }),
-      ...(result.data.title === undefined ? {} : { title: result.data.title }),
+      content,
+      ...(metadata.data.title === undefined ? {} : { title: metadata.data.title }),
       ...(param === undefined ? {} : { param })
     });
   } catch (cause) {
     if (cause instanceof PushError) throw cause;
     throw new PushError('INVALID_MESSAGE', 'Invalid push payload.', { cause });
   }
+}
+
+function invalidPayload(cause?: unknown): PushError {
+  return new PushError('INVALID_MESSAGE', 'Invalid push payload.', { cause });
 }
 
 export function normalizeSendOptions(input: unknown): Readonly<PushSendOptions> {

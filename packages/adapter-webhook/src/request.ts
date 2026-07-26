@@ -1,4 +1,8 @@
-import type { PushAdapterOperationOptions, PushDispatchResult, PushPayload } from '@pushc/core';
+import type {
+  NormalizedPushPayload,
+  PushAdapterOperationOptions,
+  PushDispatchResult
+} from '@pushc/core';
 
 import { invalidConfig, parseContentType } from './config.js';
 import { WebhookError } from './error.js';
@@ -23,10 +27,11 @@ const FILTERED_RESPONSE_HEADERS = new Set([
 export function buildWebhookRequest(
   target: WebhookRequestConfig,
   origin: string,
-  payload: PushPayload
+  payload: NormalizedPushPayload
 ): WebhookRequestReceipt {
   try {
     const url = parseFinalUrl(renderWebhookTemplate(target.url, payload), origin);
+
     const headerMap = new Map<string, string>();
     for (const [name, value] of Object.entries(target.headers)) {
       headerMap.set(name, renderWebhookTemplate(value, payload));
@@ -51,6 +56,7 @@ export function buildWebhookRequest(
         }
       }
     }
+
     if ((target.method === 'GET' || target.method === 'HEAD') && body !== undefined) {
       throw invalidConfig();
     }
@@ -61,6 +67,7 @@ export function buildWebhookRequest(
     } catch (cause) {
       throw invalidConfig(cause);
     }
+
     return {
       url,
       method: target.method,
@@ -88,27 +95,32 @@ export async function sendWebhook(
   try {
     const contentType =
       request.content_type === undefined ? undefined : parseContentType(request.content_type);
+
     const body =
       request.body === undefined
         ? undefined
         : contentType?.essence === 'text/plain'
           ? (request.body as string)
           : JSON.stringify(request.body);
+
     const response = await fetch(request.url, {
       method: request.method,
       headers: request.headers,
       ...(body === undefined ? {} : { body }),
       signal: requestAbort.signal
     });
+
     const responseReceipt = await readResponse(response);
+
     if (!response.ok) {
       return failure(`Webhook returned HTTP ${response.status}.`, responseReceipt);
+    } else {
+      return {
+        success: true,
+        summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
+        response: responseReceipt
+      };
     }
-    return {
-      success: true,
-      summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
-      response: responseReceipt
-    };
   } catch (error) {
     if (requestAbort.signal.aborted) {
       return failure(
@@ -116,8 +128,9 @@ export async function sendWebhook(
           ? `Webhook request timed out after ${request.timeout_ms}ms.`
           : 'Webhook request was aborted.'
       );
+    } else {
+      return failure(error instanceof WebhookError ? error.message : 'Webhook request failed.');
     }
-    return failure(error instanceof WebhookError ? error.message : 'Webhook request failed.');
   } finally {
     requestAbort.cleanup();
   }

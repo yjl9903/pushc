@@ -38,61 +38,53 @@ For a default destination, put exactly one ID directly on the adapter and send t
 define named targets and send to destinations such as `qq:ops-group`. Defining a single named target
 does not make it the default.
 
-## Payload mapping
+## Message behavior
 
-NapCat sends one QQ `send_msg` request:
+NapCat sends one QQ message:
 
-- A `user_id` target becomes a private message.
-- A `group_id` target becomes a group message.
-- Attachments become message segments in input order.
-- A non-whitespace message becomes one text segment after all attachment segments.
-- An attachment-only payload does not create an empty text segment.
+- A `user_id` target sends a private message.
+- A `group_id` target sends a group message.
+- Text and attachment nodes retain their exact input order.
+- Each text node remains separate, including empty and whitespace-only nodes.
 - `title` and `param` are ignored.
 
 ## Attachment sources and preparation
 
-NapCat accepts local file paths and credential-free HTTP(S) URLs. Relative local paths resolve from
-the current working directory captured for the send. A local source must be a readable regular file.
-A source containing `scheme://` is treated as a URL; only HTTP and HTTPS are accepted. Other strings,
-including relative paths containing `:`, remain local paths.
+NapCat accepts local file paths and credential-free HTTP(S) URLs. A relative path passed with CLI
+`--attachment` resolves from the current working directory. A relative attachment source in a
+message file resolves from that file's directory; in piped JSON or TOML, it resolves from the
+current working directory. A local source must be a readable regular file. A source containing
+`scheme://` is treated as a URL; only HTTP and HTTPS are accepted. Other strings, including relative
+paths containing `:`, remain local paths.
 
-Local attachments are read once, checked against the aggregate `max_attachment_bytes` limit,
-SHA-256 hashed, and converted internally to `base64://` transport data. The public receipt records
-only the safe filename, MIME type, original size, hash, and `encoding: "base64"`; it does not include
-the local path or encoded content.
+The total size of local attachments must not exceed `max_attachment_bytes`. Remote URLs are not
+downloaded by pushc and do not count toward that limit. Do not put secrets in attachment URLs.
+Receipts omit local paths, encoded file contents, and remote URL paths, queries, or credentials.
 
-Remote URLs are not downloaded by pushc and do not count toward `max_attachment_bytes`. The complete
-URL is passed internally to NapCat, while the public receipt records only a sanitized filename, MIME
-type, host, and `encoding: "url"`. It omits the URL path, query, and credentials. Do not put secrets
-in attachment URLs.
+An explicit attachment `media_type` in a structured message is authoritative. Otherwise, MIME type
+comes from the local filename or URL path; a real send may use a valid remote Content-Type when
+available. If a remote Content-Type cannot be determined, pushc uses the filename or URL path type
+without failing the send. Images, audio, and video map to NapCat image, record, and video messages;
+other or unknown types map to files. Every text node preserves its original string, including
+whitespace.
 
-MIME type initially comes from the local filename or URL path. Images, audio, and video map to
-NapCat image, record, and video segments; other or unknown types map to file segments. Before a real
-send, pushc issues bounded concurrent HEAD requests for remote URLs and uses a valid response
-Content-Type when available. Probe failures fall back to the initial type and do not by themselves
-fail the send.
+## Dry run and sending
 
-## Dry run and connection lifecycle
+`--dry-run` validates remote URL syntax and fully prepares local files without contacting NapCat or
+an attachment host. A successful dry run confirms local preparation only.
 
-`--dry-run` validates remote URLs and fully prepares local files, including reading, size checking,
-encoding, and hashing. It does not probe remote MIME types, create a client, connect, upload, call
-`send_msg`, or otherwise contact NapCat or an attachment host. A successful dry run confirms local
-preparation only.
-
-A real send creates the WebSocket client lazily. Concurrent first sends share the same connection,
-and later sends reuse it until the CLI destroys the adapter. The operation timeout covers remote
-MIME probing, connection, and `send_msg`. Connection failure clears the cached client so a later
-explicit send can try again. The CLI closes acquired resources before exiting.
+A real send requires the configured NapCat WebSocket service to be reachable. The configured timeout
+covers remote attachment inspection, connection, and sending.
 
 ## Receipts and failures
 
 A successful receipt records the sanitized prepared message and NapCat's message ID. Its summary
 identifies whether the destination was a user or group and includes the message ID when available.
 
-Invalid connection, target, source, file, size, or payload preparation fails without sending.
-Connection, SDK, timeout, cancellation, and platform failures return a failed send with every
-available receipt field. Configuration and target failures use `INVALID_CONFIG`; dispatch failures
-surface through `SEND_FAILED`.
+Invalid connection settings, targets, attachments, or message content fail before sending.
+Connection, timeout, cancellation, and platform failures return a failed send with every available
+receipt field. Configuration and target failures use `INVALID_CONFIG`; sending failures use
+`SEND_FAILED`.
 
-Do not automatically retry. A connection or transport failure can be ambiguous after dispatch and a
-retry may duplicate the QQ message.
+Do not automatically retry. A connection failure can occur after QQ accepts the message, so a retry
+may send it twice.

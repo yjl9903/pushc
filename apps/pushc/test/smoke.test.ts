@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,6 +136,131 @@ describe('built CLI', () => {
     }
   });
 
+  it('parses a structured message from piped JSON', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-json-pipe-'));
+    const config = join(root, 'config.toml');
+    await writeFile(
+      config,
+      [
+        '[adapters.webhook]',
+        'type = "webhook"',
+        'url = "https://example.com/hook"',
+        '[adapters.webhook.request]',
+        'content_type = "application/json"',
+        '[adapters.webhook.request.body]',
+        'message = "{{message}}"',
+        'group = "{{param.group:-default}}"',
+        'environment = "{{param.environment:-unknown}}"'
+      ].join('\n')
+    );
+
+    try {
+      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [cli, 'send', '--param', 'group=cli', '--dry-run', '--config', config, '--json'],
+        {
+          encoding: 'utf8',
+          input: JSON.stringify({
+            target: 'webhook',
+            content: ['hello', ' ', 'world'],
+            param: { group: 42, environment: 'production' }
+          })
+        }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        dryRun: true,
+        success: true,
+        adapter: 'webhook',
+        receipt: {
+          request: {
+            body: {
+              message: 'hello world',
+              group: 'cli',
+              environment: 'production'
+            }
+          }
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('loads an ordered TOML AST and resolves attachments from the message directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-toml-message-'));
+    const config = join(root, 'config.toml');
+    const messages = join(root, 'messages');
+    const messageFile = join(messages, 'release.toml');
+    const attachment = join(messages, 'report.bin');
+    await mkdir(messages);
+    await writeFile(
+      config,
+      [
+        '[adapters.qq]',
+        'type = "napcat"',
+        'base_url = "ws://127.0.0.1:1"',
+        '[adapters.qq.targets.ops]',
+        'group_id = "123"'
+      ].join('\n')
+    );
+    await writeFile(attachment, 'report');
+    await writeFile(
+      messageFile,
+      [
+        'target = "qq:ops"',
+        '[[content]]',
+        'type = "text"',
+        'text = "before"',
+        '[[content]]',
+        'type = "attachment"',
+        'source = "./report.bin"',
+        'name = "report.txt"',
+        'media_type = "text/plain"',
+        '[[content]]',
+        'type = "text"',
+        'text = "after"'
+      ].join('\n')
+    );
+
+    try {
+      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [cli, 'send', '--file', messageFile, '--dry-run', '--config', config, '--json'],
+        { encoding: 'utf8' }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        dryRun: true,
+        success: true,
+        adapter: 'qq',
+        target: 'ops',
+        receipt: {
+          request: {
+            params: {
+              group_id: 123,
+              message: [
+                { type: 'text', data: { text: 'before' } },
+                attachmentReceipt('file', 'report.txt', 'text/plain', 'report'),
+                { type: 'text', data: { text: 'after' } }
+              ]
+            }
+          }
+        }
+      });
+      expect(result.stdout).not.toContain(messages);
+      expect(result.stdout).not.toContain('base64://');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('prepares repeatable local and remote attachments without sending to NapCat', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pushc-attachment-dry-run-'));
     const config = join(root, 'config.toml');
@@ -192,7 +317,8 @@ describe('built CLI', () => {
               message: [
                 attachmentReceipt('image', 'photo.png', 'image/png', 'image'),
                 attachmentReceipt('file', 'report.txt', 'text/plain', 'report'),
-                remoteAttachmentReceipt('video', 'clip.mp4', 'video/mp4', 'cdn.example.com')
+                remoteAttachmentReceipt('video', 'clip.mp4', 'video/mp4', 'cdn.example.com'),
+                { type: 'text', data: { text: '' } }
               ]
             }
           }

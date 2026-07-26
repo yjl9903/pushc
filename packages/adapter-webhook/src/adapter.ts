@@ -1,9 +1,9 @@
 import {
   PushAdapter,
   PushError,
+  type NormalizedPushPayload,
   type PushAdapterOperationOptions,
   type PushDispatchResult,
-  type PushPayload,
   type PushPreparedRequest
 } from '@pushc/core';
 
@@ -48,11 +48,11 @@ export class WebhookAdapter extends PushAdapter<
 
   protected async prepareRequest(
     target: WebhookTargetConfig,
-    payload: PushPayload,
+    payload: NormalizedPushPayload,
     _options: PushAdapterOperationOptions
   ): Promise<PushPreparedRequest<WebhookRequestReceipt, WebhookRequestReceipt>> {
     try {
-      if (payload.attachments !== undefined) {
+      if (payload.content.some((item) => item.type === 'attachment')) {
         throw new PushError('INVALID_MESSAGE', 'Webhook does not support attachments.');
       }
 

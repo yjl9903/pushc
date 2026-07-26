@@ -1,10 +1,16 @@
-import type { PushPayload, PushPreparedRequest } from '@pushc/core';
+import type {
+  NormalizedPushPayload,
+  PushAttachmentContent,
+  PushPreparedRequest
+} from '@pushc/core';
 
 import type {
   NapCatAttachmentReceiptSegment,
   NapCatAttachmentTransportSegment,
   NapCatRequestReceipt,
+  NapCatReceiptMessageSegment,
   NapCatTargetConfig,
+  NapCatTransportMessageSegment,
   NapCatTransportRequest
 } from './types.js';
 
@@ -22,31 +28,51 @@ interface RemoteProbeUpdate extends RemoteProbeCandidate {
   readonly mediaType: string;
 }
 
+export interface PreparedNapCatRequest extends PushPreparedRequest<
+  NapCatRequestReceipt,
+  NapCatTransportRequest
+> {
+  readonly remoteMediaTypeProbeIndices: readonly number[];
+}
+
 export async function prepareNapCatRequest(
   target: NapCatTargetConfig,
-  payload: PushPayload,
+  payload: NormalizedPushPayload,
   maxAttachmentBytes: number,
   signal?: AbortSignal
-): Promise<PushPreparedRequest<NapCatRequestReceipt, NapCatTransportRequest>> {
-  const attachments = await prepareNapCatAttachments(
-    payload.attachments ?? [],
-    maxAttachmentBytes,
-    signal
+): Promise<PreparedNapCatRequest> {
+  const attachmentContent = payload.content.filter(
+    (item): item is PushAttachmentContent => item.type === 'attachment'
   );
+  const attachments = await prepareNapCatAttachments(attachmentContent, maxAttachmentBytes, signal);
   const recipient =
     'user_id' in target
       ? ({ user_id: Number(target.user_id) } as const)
       : ({ group_id: Number(target.group_id) } as const);
-  const textSegments =
-    payload.message.trim().length === 0
-      ? []
-      : ([{ type: 'text', data: { text: payload.message } }] as const);
+  let nextAttachment = 0;
+  const receiptMessage: NapCatReceiptMessageSegment[] = [];
+  const transportMessage: NapCatTransportMessageSegment[] = [];
+  const remoteMediaTypeProbeIndices: number[] = [];
+  for (const item of payload.content) {
+    if (item.type === 'text') {
+      const segment = { type: 'text' as const, data: { text: item.text } };
+      receiptMessage.push(segment);
+      transportMessage.push(segment);
+      continue;
+    }
+    const attachment = attachments[nextAttachment++]!;
+    if (item.mediaType === undefined && attachment.receiptSegment.data.encoding === 'url') {
+      remoteMediaTypeProbeIndices.push(transportMessage.length);
+    }
+    receiptMessage.push(attachment.receiptSegment);
+    transportMessage.push(attachment.transportSegment);
+  }
 
   const receiptRequest: NapCatRequestReceipt = {
     method: 'send_msg',
     params: {
       ...recipient,
-      message: [...attachments.map(({ receiptSegment }) => receiptSegment), ...textSegments]
+      message: receiptMessage
     }
   };
 
@@ -54,30 +80,36 @@ export async function prepareNapCatRequest(
     method: 'send_msg',
     params: {
       ...recipient,
-      message: [...attachments.map(({ transportSegment }) => transportSegment), ...textSegments]
+      message: transportMessage
     }
   };
 
-  return { receiptRequest, transportRequest };
+  return {
+    receiptRequest,
+    transportRequest,
+    remoteMediaTypeProbeIndices: Object.freeze(remoteMediaTypeProbeIndices)
+  };
 }
 
 export async function updateNapCatRemoteMediaTypes(
   fetch: typeof globalThis.fetch,
-  prepared: PushPreparedRequest<NapCatRequestReceipt, NapCatTransportRequest>,
+  prepared: PreparedNapCatRequest,
   signal: AbortSignal
 ): Promise<void> {
   const candidates: RemoteProbeCandidate[] = [];
-  for (const [index, receiptSegment] of prepared.receiptRequest.params.message.entries()) {
+  for (const index of prepared.remoteMediaTypeProbeIndices) {
+    const receiptSegment = prepared.receiptRequest.params.message[index];
+    const transportSegment = prepared.transportRequest.params.message[index];
     if (
+      receiptSegment === undefined ||
       receiptSegment.type === 'text' ||
       !('encoding' in receiptSegment.data) ||
-      receiptSegment.data.encoding !== 'url'
+      receiptSegment.data.encoding !== 'url' ||
+      transportSegment === undefined ||
+      transportSegment.type === 'text'
     ) {
       continue;
     }
-
-    const transportSegment = prepared.transportRequest.params.message[index];
-    if (transportSegment === undefined || transportSegment.type === 'text') continue;
     candidates.push({ index, receiptSegment, transportSegment });
   }
 

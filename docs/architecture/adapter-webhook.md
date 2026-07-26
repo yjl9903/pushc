@@ -58,8 +58,9 @@ scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非�
 
 ## Request 构造
 
-异步 `prepareRequest(target, payload)` 先拒绝包含 attachments 的 payload，再从
-`target.request` 每次建立 request-local headers Map 与 JSON tree：
+异步 `prepareRequest(target, payload)` 将 normalized payload 的 text nodes 无分隔符拼接为
+模板变量 `message`，并拒绝任何 attachment node，再从 `target.request` 每次建立
+request-local headers Map 与 JSON tree：
 
 1. 渲染 request URL、header value 和 body string value。
 2. 校验最终绝对 HTTP(S) URL、credentials 与 adapter origin。
@@ -74,7 +75,7 @@ scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非�
 preparation 返回同一个规范化 request 作为 `receiptRequest` 与 `transportRequest`。
 `send(..., { dryRun: true })` 只执行本地 preparation，返回只含最终 request 的 receipt，不创建
 timeout 或调用 Fetch。正常 send 将 prepared request 传给 `dispatchRequest`，因此 dry run 与
-receipt request 不维护重复转换逻辑。Webhook 不支持 attachments，统一返回
+receipt request 不维护重复转换逻辑。Webhook 不支持 attachment nodes，统一返回
 `INVALID_MESSAGE`，不静默忽略或隐式生成 multipart。
 
 Webhook 以 `response.ok`（HTTP 200–299）判断成功，不增加 retry。dispatch 返回 response、
@@ -96,5 +97,6 @@ transport、HTTP 和 abort 错误转换为统一失败 result，不做配置错�
 
 测试覆盖配置默认矩阵、target merge、特殊 key、JSON normalization、模板 scanner、URL
 origin、Content-Type/serializer、method/body、timeout/abort cleanup、并发请求隔离、错误映射、
-attachments 明确拒绝、严格空 response 占位、dry run 无 Fetch、response receipt 与 fetch
+多个 text node 拼接、attachment 明确拒绝、严格空 response 占位、dry run 无 Fetch、
+response receipt 与 fetch
 unavailable。

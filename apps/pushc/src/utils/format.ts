@@ -1,22 +1,9 @@
 import { formatDestination, type PushDryRunResult, type PushResult } from '@pushc/core';
-import {
-  cliErrorRedactions,
-  getErrorCodeExitCode,
-  getErrorExitCode,
-  isJsonCliError,
-  normalizeError,
-  unwrapCliError
-} from './error.js';
 import { redactForOutput } from './redact.js';
 
 export interface CliTargetSummary {
   adapter: string;
   target?: string;
-}
-
-export interface CliFailure {
-  output: string;
-  exitCode: number;
 }
 
 export function formatSendResult(
@@ -82,20 +69,4 @@ export function formatTargets(targets: readonly CliTargetSummary[], json: boolea
         .join('\n')}\n`;
     }
   }
-}
-
-export function formatError(error: unknown): CliFailure {
-  const cause = unwrapCliError(error);
-  const normalized = redactForOutput(normalizeError(cause), cliErrorRedactions(error));
-
-  return {
-    output: isJsonCliError(error)
-      ? `${JSON.stringify({ success: false, error: normalized })}\n`
-      : `Error: ${normalized.message}\n`,
-    exitCode: getErrorExitCode(cause)
-  };
-}
-
-export function getSendResultExitCode(result: PushResult | PushDryRunResult): number {
-  return result.success ? 0 : getErrorCodeExitCode(result.error.code);
 }
