@@ -3,8 +3,7 @@ import {
   WebhookAdapter,
   WebhookError,
   parseContentType,
-  parseWebhookConfig,
-  renderWebhookTemplate
+  parseWebhookConfig
 } from '../src/index.js';
 import { buildWebhookRequest } from '../src/request.js';
 
@@ -298,7 +297,7 @@ describe('webhook templates and requests', () => {
     expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('x-token')).toBe('token');
   });
 
-  it('concatenates normalized text nodes without inserting separators', async () => {
+  it('renders and concatenates normalized text nodes without inserting separators', async () => {
     const fetch = okFetch();
     const adapter = new WebhookAdapter(
       {
@@ -308,7 +307,11 @@ describe('webhook templates and requests', () => {
       { fetch }
     );
 
-    await adapter.send(undefined, { content: ['hello', ' ', 'world'] });
+    await adapter.send(undefined, {
+      content: ['{{title}}', ' ', '{{param.subject}}'],
+      title: 'hello',
+      param: new Map([['subject', 'world']])
+    });
 
     expect(fetch.mock.calls[0]![1]?.body).toBe('hello world');
   });
@@ -345,7 +348,10 @@ describe('webhook templates and requests', () => {
       {
         content: [{ type: 'text', text: 'build complete' }],
         title: '',
-        param: { topic: 'deployments', group: 'production' }
+        param: new Map([
+          ['topic', 'deployments'],
+          ['group', 'production']
+        ])
       }
     );
 
@@ -387,7 +393,10 @@ describe('webhook templates and requests', () => {
         {
           content: 'build complete',
           title: '',
-          param: { topic: 'deployments', group: 'production' }
+          param: new Map([
+            ['topic', 'deployments'],
+            ['group', 'production']
+          ])
         },
         { dryRun: true }
       )
@@ -435,29 +444,6 @@ describe('webhook templates and requests', () => {
       }
     });
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('scans once, supports fallback, and preserves invalid expressions', () => {
-    const payload = {
-      content: [{ type: 'text' as const, text: '{{title}}' }],
-      title: '',
-      param: { empty: '', spaced: ' ', inject: '{{message}}' }
-    };
-    expect(
-      renderWebhookTemplate(
-        String.raw`{{ message }}|{{title:-alpha:-beta}}|{{param.empty:-x}}|{{param.spaced:-x}}|{{param.inject}}|\{{title}}|{{unknown}}|{{`,
-        payload
-      )
-    ).toBe('{{title}}|alpha:-beta|x| |{{message}}|{{title}}|{{unknown}}|{{');
-  });
-
-  it('treats inherited non-string param properties as missing', () => {
-    expect(
-      renderWebhookTemplate('{{param.constructor:-missing}}|{{param.toString:-missing}}', {
-        content: [{ type: 'text', text: 'hello' }],
-        param: {}
-      })
-    ).toBe('missing|missing');
   });
 
   it('sends text bodies without JSON quoting', async () => {
@@ -510,7 +496,7 @@ describe('webhook templates and requests', () => {
     await expect(
       conflicting.send(undefined, {
         content: 'ok',
-        param: { type: 'text/plain' }
+        param: new Map([['type', 'text/plain']])
       })
     ).resolves.toMatchObject({
       success: false,

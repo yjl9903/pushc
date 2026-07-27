@@ -58,10 +58,14 @@ cli
 
     try {
       let result: PushResult | PushDryRunResult;
+      const sendOptions = input.basePath === undefined ? {} : { basePath: input.basePath };
       try {
         result = options.dryRun
-          ? await runtime.client.send(input.target, input.payload, { dryRun: true })
-          : await runtime.client.send(input.target, input.payload);
+          ? await runtime.client.send(input.target, input.payload, {
+              ...sendOptions,
+              dryRun: true
+            })
+          : await runtime.client.send(input.target, input.payload, sendOptions);
       } catch (error) {
         await runtime.client.destroy().catch(() => undefined);
         throw error;

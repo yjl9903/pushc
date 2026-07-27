@@ -6,7 +6,7 @@ import type { NormalizedPushPayload, PushSendOptions } from './types.js';
 
 const PARAM_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
-const paramSchema = z.record(z.string().regex(PARAM_KEY_PATTERN), z.string());
+const paramSchema = z.map(z.string().regex(PARAM_KEY_PATTERN), z.string());
 const payloadSchema = z.strictObject({
   content: z.unknown(),
   attachments: z.unknown().optional(),
@@ -15,20 +15,25 @@ const payloadSchema = z.strictObject({
 });
 const sendOptionsSchema = z.strictObject({
   signal: z.instanceof(AbortSignal).optional(),
-  dryRun: z.boolean().optional()
+  dryRun: z.boolean().optional(),
+  basePath: z.string().min(1).optional()
 });
 
 export function normalizePayload(input: unknown): NormalizedPushPayload {
   const result = payloadSchema.safeParse(input);
   if (!result.success) throw invalidPayload(result.error);
 
+  const param = result.data.param === undefined ? undefined : new Map(result.data.param);
   const hasAttachments = result.data.attachments !== undefined;
-  const content = normalizeContent(result.data.content, result.data.attachments, hasAttachments);
+  const content = normalizeContent(result.data.content, result.data.attachments, hasAttachments, {
+    variables: new Map([['title', result.data.title]]),
+    namespaces: new Map([['param', param]])
+  });
 
   return {
     content,
     ...(result.data.title === undefined ? {} : { title: result.data.title }),
-    ...(result.data.param === undefined ? {} : { param: result.data.param })
+    ...(param === undefined ? {} : { param })
   };
 }
 

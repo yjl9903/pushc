@@ -38,8 +38,11 @@ client.adapters.register(
 
 await client.send('bark', {
   title: 'Production',
-  content: ['Build ', 'completed'],
-  param: { group: 'deployments' }
+  content: ['{{title}} build ', 'completed for {{param.environment}}'],
+  param: new Map([
+    ['environment', 'production'],
+    ['group', 'deployments']
+  ])
 });
 
 await client.destroy();

@@ -18,22 +18,24 @@ export interface PushPayload {
   readonly content: PushContentInput;
   readonly attachments?: readonly string[];
   readonly title?: string;
-  readonly param?: Readonly<Record<string, string>>;
+  readonly param?: ReadonlyMap<string, string>;
 }
 
 export interface NormalizedPushPayload {
   readonly content: readonly PushContent[];
   readonly title?: string;
-  readonly param?: Readonly<Record<string, string>>;
+  readonly param?: ReadonlyMap<string, string>;
 }
 
 export interface PushSendOptions {
   readonly dryRun?: boolean;
   readonly signal?: AbortSignal;
+  readonly basePath?: string;
 }
 
 export interface PushAdapterOperationOptions {
   readonly signal?: AbortSignal;
+  readonly basePath?: string;
 }
 
 export type PushTargetInput = string | Readonly<Record<string, unknown>>;

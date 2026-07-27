@@ -27,38 +27,46 @@ pushc send --target adapter[:target] \
   [--dry-run] [--file <path> | ...content]
 ```
 
-CLI 将位置参数、`--file` 或 stdin 解析成 `{ target?, payload: PushPayload }`，不生成 AST；
-core 负责后续 normalize。位置参数始终按空格连接为 literal string。`--file` 与位置参数互斥，
-有 `--file` 时不读取 stdin。
+CLI 将位置参数、`--file` 或 stdin 解析成
+`{ target?, payload: PushPayload, basePath? }`，不生成 AST；core 负责后续
+normalize。位置参数始终按空格连接为 literal string。`--file` 与位置参数互斥，有 `--file`
+时不读取 stdin。
 
 输入实现完整收敛在 `src/input/`：`index.ts` 编排消息来源、CLI 覆盖和最终 payload；
 `src/input/message.ts` 负责格式探测、结构化文档提取及 attachment 路径上下文；
-`src/input/params.ts` 负责 `--param` entry。所有 CLI、配置和消息输入错误类型、归一化、
+`src/input/params.ts` 负责把 `--param` entry 解析、合并为 Map。所有 CLI、配置和消息输入错误类型、归一化、
 脱敏输出与退出码映射统一位于 `src/error.ts`。
 
 文件按大小写不敏感后缀选择解析顺序：`.json` 为 JSON/TOML/text，`.toml` 为 TOML/JSON/text，
 `.txt` 固定 text，其他或无后缀为 JSON/TOML/text。stdin 没有后缀，使用 JSON/TOML/text；
 空白输入直接视为 text。JSON/TOML 只有 syntax error 才进入下一个 parser；syntax success 后
 固定格式，文档或 core payload 校验失败不得 fallback 成 text。结构化根对象取出可选 target，
-其余字段形成 PushPayload；attachment node 的 `media_type` 映射为 `mediaType`。
+其余字段形成 PushPayload；消息文件的 param table 在此边界转换为 Map，attachment node 的
+`media_type` 映射为 `mediaType`。
 
 结构化文件或 stdin 可提供默认 target，CLI `--target` 覆盖它；没有有效 target 时失败。
 CLI `--title` 覆盖结构化消息中的 title；CLI `--param` 按 key 覆盖结构化消息中的 param，
 未覆盖 key 保留。结构化输入独占 attachments，与 CLI `--attachment` 混用为 `CLI_USAGE`。
-text 输入继续允许 CLI title/param/attachments；attachment source 在 CLI 中只做路径上下文
-解析，消息顺序由 core normalize。结构化文件的公共本地 attachment 相对消息文件目录，
-stdin 和 CLI attachment 相对 cwd；带 `scheme://` 的 source 保持原样交给 adapter。
+text 输入继续允许 CLI title/param/attachments；CLI 不改写 attachment source，而是在消息
+含有 attachment 时提供绝对 `basePath`。结构化文件以消息文件目录为 base，
+stdin 和 CLI attachment 以 cwd 为 base。core 完成模板渲染后，adapter 根据最终 source
+区分 URL、绝对路径与相对路径；只有相对本地路径使用该 base。消息顺序由 core normalize。
+CLI 不渲染消息模板。core 使用 CLI 覆盖后的最终 title/param 渲染所有 content 输入；
+结构化消息中 text 的 `text` 与 attachment 的 `source`、`name`、`media_type` 均可使用
+`{{title}}` 和 `{{param.key}}`。
 
-`--dry-run` 调用 `client.send(destination, payload, { dryRun: true })`。它仍完成配置、target、
-payload 和 adapter 本地 preparation，包括本地附件读取与编码以及远程 URL 校验，但不下载
-远程附件、不执行 `dispatchRequest` 或任何目标服务交互。结果固定包含 `dryRun: true`；
-`success` 只表示 request 是否准备成功。正常 send 结果不增加 dryRun 字段。
+`--dry-run` 调用
+`client.send(destination, payload, { dryRun: true, basePath? })`。普通 send 同样传递可选
+base path。它仍完成配置、target、payload 和 adapter 本地 preparation，包括
+本地附件读取与编码以及远程 URL 校验，但不下载远程附件、不执行 `dispatchRequest` 或任何
+目标服务交互。结果固定包含 `dryRun: true`；`success` 只表示 request 是否准备成功。正常
+send 结果不增加 dryRun 字段。
 
 `--param key=value` 可重复出现，每个 entry 都必须完整重复一次 option。每项按第一个 `=`
 分隔，key/value 不 trim；value 可以为空或包含更多 `=`。key 必须匹配
 `[A-Za-z0-9][A-Za-z0-9_.-]*`，同一次发送中按大小写敏感规则拒绝重复 key。缺少 `=`、空/非法
-key 或重复 key 为 `CLI_USAGE`，exit 2。param 只产生一层 string Record，不解析 JSON 或创建
-嵌套结构。结构化消息已有 param 时，CLI param 按 key 覆盖它。
+key 或重复 key 为 `CLI_USAGE`，exit 2。param 只产生一层 string Map，不解析 JSON 或创建
+嵌套结构。结构化消息已有 param 时，CLI param 按 key 覆盖它并产生新的 Map。
 
 ## 输出与错误
 

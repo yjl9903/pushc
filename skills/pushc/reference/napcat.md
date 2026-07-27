@@ -46,7 +46,7 @@ NapCat sends one QQ message:
 - A `group_id` target sends a group message.
 - Text and attachment nodes retain their exact input order.
 - Each text node remains separate, including empty and whitespace-only nodes.
-- `title` and `param` are ignored.
+- `title` and `param` can render message-content templates but are not sent as separate QQ fields.
 
 ## Attachment sources and preparation
 
@@ -65,8 +65,9 @@ An explicit attachment `media_type` in a structured message is authoritative. Ot
 comes from the local filename or URL path; a real send may use a valid remote Content-Type when
 available. If a remote Content-Type cannot be determined, pushc uses the filename or URL path type
 without failing the send. Images, audio, and video map to NapCat image, record, and video messages;
-other or unknown types map to files. Every text node preserves its original string, including
-whitespace.
+other or unknown types map to files. NapCat consumes the text, source, name, and media type after
+core renders their title/param templates; it does not apply another transformation. Every rendered
+text node preserves its whitespace.
 
 ## Dry run and sending
 

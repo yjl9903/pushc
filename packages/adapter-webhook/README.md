@@ -32,8 +32,11 @@ const adapter = new WebhookAdapter({
 
 await adapter.send(undefined, {
   title: 'Production',
-  content: 'Build completed',
-  param: { group: 'releases' }
+  content: '{{title}} build completed for {{param.environment}}',
+  param: new Map([
+    ['environment', 'production'],
+    ['group', 'releases']
+  ])
 });
 ```
 

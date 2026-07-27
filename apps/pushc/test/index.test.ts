@@ -17,6 +17,7 @@ describe('public API', () => {
         "normalizeConfigPath",
         "normalizeDestination",
         "parsePushConfig",
+        "renderTemplate",
         "validateDestinationName",
       ]
     `);

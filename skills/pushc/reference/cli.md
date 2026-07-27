@@ -133,21 +133,23 @@ JSON is the primary structured format:
 ```json
 {
   "target": "alerts:release",
-  "title": "Build completed",
+  "title": "Deployment completed",
   "param": {
     "environment": "production",
-    "group": "deployments"
+    "report_file": "report.pdf",
+    "report_name": "deployment-report.pdf",
+    "media_type": "application/pdf"
   },
   "content": [
     {
       "type": "text",
-      "text": "Production deployment succeeded.\n"
+      "text": "{{title}} for {{param.environment}}.\n"
     },
     {
       "type": "attachment",
-      "source": "./report.pdf",
-      "name": "deployment-report.pdf",
-      "media_type": "application/pdf"
+      "source": "./{{param.report_file}}",
+      "name": "{{param.report_name}}",
+      "media_type": "{{param.media_type}}"
     },
     {
       "type": "text",
@@ -190,6 +192,17 @@ An attachment node contains:
 - `media_type`: an optional MIME type such as `application/pdf`.
 
 Nodes appear in the declared order. Unknown node types and unknown node fields are rejected.
+
+The `text`, `source`, `name`, and `media_type` strings support:
+
+- `{{title}}`
+- `{{param.key}}`
+- `{{title:-fallback}}` and `{{param.key:-fallback}}`
+
+CLI `--title` and `--param` overrides are applied before these expressions are rendered.
+Substitutions run once and do not perform URL, JSON, or path encoding. Unknown, invalid, or
+unclosed expressions remain literal; prefix an opening expression with `\` to escape it.
+`{{message}}` is not available inside message content.
 
 Relative attachment sources in a message file resolve from that file's directory. For piped JSON or
 TOML, they resolve from the current working directory. Absolute paths and sources with a URI scheme,

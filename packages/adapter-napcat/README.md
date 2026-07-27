@@ -27,8 +27,12 @@ await adapter.send(
     group_id: '123456789'
   },
   {
-    content: 'Build completed',
-    attachments: ['./screenshot.png', 'https://example.com/report.pdf']
+    title: 'Production',
+    param: new Map([['report', 'report.pdf']]),
+    content: [
+      { type: 'text', text: '{{title}} build completed' },
+      { type: 'attachment', source: 'https://example.com/{{param.report}}' }
+    ]
   }
 );
 

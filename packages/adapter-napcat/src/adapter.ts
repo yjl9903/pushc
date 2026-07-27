@@ -54,7 +54,7 @@ export class NapCatAdapter extends PushAdapter<
     payload: NormalizedPushPayload,
     options: PushAdapterOperationOptions
   ): Promise<PreparedNapCatRequest> {
-    return prepareNapCatRequest(target, payload, this.config.max_attachment_bytes, options.signal);
+    return prepareNapCatRequest(target, payload, this.config.max_attachment_bytes, options);
   }
 
   protected async dispatchRequest(

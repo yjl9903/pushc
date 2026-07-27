@@ -68,16 +68,18 @@ name, such as `deploy`. Defining a single named target does not make it the defa
 
 ## Payload templates
 
-Templates are supported in `request.url`, header values, and string values inside `request.body`:
+Webhook request templates use the same single-pass syntax as message content. They are supported in
+`request.url`, header values, and string values inside `request.body`:
 
-- `{{message}}` uses the message text. A structured message with multiple text nodes joins them in
-  order without a separator.
+- `{{message}}` uses the already-rendered message text. Multiple text nodes join in order without a
+  separator.
 - `{{title}}` uses the optional title.
 - `{{param.key}}` uses the effective message param after structured-message values and CLI
   overrides are merged.
 - `{{title:-pushc}}` and equivalent expressions use the fallback when the value is missing or empty.
 
-Template substitutions run once; replacements and fallbacks are not processed again. Unknown,
+Each message-content or Webhook-request rendering pass scans its own template once; replacements
+and fallbacks are not processed again. Unknown,
 invalid, or unclosed expressions remain literal. Prefix an opening expression with `\` to escape it.
 Templates do not perform URL or JSON encoding.
 

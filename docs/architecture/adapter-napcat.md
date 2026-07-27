@@ -49,9 +49,11 @@ ID 在调用 SDK 前转换为 number，因此不支持超出安全整数范围�
 NapCatAdapter 的异步 `prepareRequest` 将 target ID 转为 number，按 normalized content 顺序
 处理 text 与 attachment nodes，并同时构造公开 `receiptRequest` 与内部
 `transportRequest`。attachment source
-可以是本地路径或不含 credentials 的 HTTP(S) URL。只有显式 `scheme://` source 进入 URL
-分类：HTTP(S) 通过，其他 scheme 拒绝；普通本地路径允许包含 `:`。相对路径基于调用 send
-时捕获的 cwd 解析，必须最终指向可读普通文件；URL 由 NapCat 直接获取，pushc 不下载。
+可以是本地路径或不含 credentials 的 HTTP(S) URL。source 已由 core 完成模板渲染，再进入
+adapter 分类；只有最终值中的显式 `scheme://` source 进入 URL 分类：HTTP(S) 通过，其他
+scheme 拒绝；普通本地路径允许包含 `:`。绝对本地路径直接使用；相对路径优先基于本次 send
+的绝对 `basePath` 解析，调用方未提供时基于调用 send 时捕获的 cwd，必须最终
+指向可读普通文件。URL 由 NapCat 直接获取，pushc 不下载。
 显式 attachment `name` 必须是单一安全文件名，`.`、`..`、路径分隔符与 control character
 均被拒绝，不做静默截断。
 显式 attachment `mediaType` 是权威值；缺省时 adapter 根据本地文件名或 URL pathname
@@ -72,7 +74,7 @@ request 的本地附件保存 basename、MIME、size、SHA-256 和 `encoding: 'b
 优先 percent-decode pathname leaf；leaf 包含无法解码的 literal `%` 时保留原值。随后去除
 解码后出现的路径分隔符，拒绝 control character，并保存安全 basename、MIME、host 和
 `encoding: 'url'`。它不保存 Base64、本地路径、完整 URL 或 query。每个 normalized text node
-都以原始字符串生成一个 text segment，不 trim、
+都以 core 已渲染的字符串生成一个 text segment，不 trim、
 连接或丢弃空白节点。显式 AST 的 text/attachment 顺序保持不变；shortcut attachments 的
 前置顺序已由 core normalize。
 
@@ -96,7 +98,7 @@ adapter 惰性维护单个 WebSocket client：constructor 不连接，第一次�
    降级使用初始类型。
 3. 获取或惰性建立共享 WebSocket 连接。
 4. target 的 `user_id` 或 `group_id` 与准备好的 transport message segments 直接传给 SDK；
-   `title` 与 `param` 被明确忽略。
+   `title` 与 `param` 已可被 core 用于 content 模板，但不会作为独立平台字段发送。
 5. 调用 `send_msg`；response 将 `message_id` 转为 `{ messageId }`。
 6. 成功 dispatch result 返回 response、summary 与最终 receipt request；core 组合 receipt。
    连接、发送、超时和取消返回失败 result；标准 Error 或 NapCat SDK failure object 的非空
@@ -112,7 +114,8 @@ adapter 惰性维护单个 WebSocket client：constructor 不连接，第一次�
 失败 result；连接和 target 配置错误由 adapter send 边界转换为 `INVALID_CONFIG` result。
 
 Vitest 通过临时本地文件与注入 mock client 覆盖 target 默认字段、partial 继承、连接字段
-拒绝、私聊/群聊参数映射、attachment-only、MIME segment 映射、Base64 与 HTTP(S) URL
+拒绝、私聊/群聊参数映射、渲染后的 text/attachment 字段、完整 URL/绝对路径模板、
+base path、attachment-only、MIME segment 映射、Base64 与 HTTP(S) URL
 transport、包含冒号的相对路径、安全远程 basename、control character 拒绝、公开 receipt
 脱敏、大小限制、dry run 不下载且无连接、SDK failure、失败清理、远程 Content-Type 类型
 修正与并行探测、调用方取消和超时。

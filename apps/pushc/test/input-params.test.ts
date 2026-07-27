@@ -6,15 +6,14 @@ import { applyParamOverrides, parseParamEntries } from '../src/input/params.js';
 
 describe('parseParamEntries', () => {
   it('splits on the first equals and preserves empty and whitespace values', () => {
-    expect(parseParamEntries(['group=deployments', 'query=a=b', 'empty=', 'space= ']))
-      .toMatchInlineSnapshot(`
-      {
-        "empty": "",
-        "group": "deployments",
-        "query": "a=b",
-        "space": " ",
-      }
-    `);
+    expect(parseParamEntries(['group=deployments', 'query=a=b', 'empty=', 'space= '])).toEqual(
+      new Map([
+        ['group', 'deployments'],
+        ['query', 'a=b'],
+        ['empty', ''],
+        ['space', ' ']
+      ])
+    );
     expect(parseParamEntries([])).toBeUndefined();
   });
 
@@ -51,23 +50,34 @@ describe('parseParamEntries', () => {
   it('applies CLI overrides to message file params', () => {
     const payload = {
       content: 'release',
-      param: { group: 'message', environment: 'production' }
+      param: new Map([
+        ['group', 'message'],
+        ['environment', 'production']
+      ])
     } as const;
 
-    const merged = applyParamOverrides(payload, {
-      group: 'cli',
-      empty: ''
-    });
+    const merged = applyParamOverrides(
+      payload,
+      new Map([
+        ['group', 'cli'],
+        ['empty', '']
+      ])
+    );
 
     expect(merged).toEqual({
       content: 'release',
-      param: {
-        group: 'cli',
-        environment: 'production',
-        empty: ''
-      }
+      param: new Map([
+        ['group', 'cli'],
+        ['environment', 'production'],
+        ['empty', '']
+      ])
     });
-    expect(payload.param).toEqual({ group: 'message', environment: 'production' });
+    expect(payload.param).toEqual(
+      new Map([
+        ['group', 'message'],
+        ['environment', 'production']
+      ])
+    );
     expect(applyParamOverrides(payload, undefined)).toBe(payload);
   });
 
@@ -76,7 +86,7 @@ describe('parseParamEntries', () => {
 
     for (const param of invalidParams) {
       const payload = { content: 'release', param } as unknown as PushPayload;
-      expect(applyParamOverrides(payload, { group: 'cli' })).toBe(payload);
+      expect(applyParamOverrides(payload, new Map([['group', 'cli']]))).toBe(payload);
     }
   });
 });

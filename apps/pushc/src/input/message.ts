@@ -1,5 +1,3 @@
-import { resolve } from 'node:path';
-
 import { parse as parseToml } from 'smol-toml';
 
 import type { PushPayload } from '@pushc/core';
@@ -22,6 +20,7 @@ interface ParsedTextMessageSource extends ParsedMessageSourceBase {
 interface ParsedStructuredMessageSource extends ParsedMessageSourceBase {
   readonly format: 'json' | 'toml';
   readonly payload: PushPayload;
+  readonly basePath: string;
 }
 
 export type ParsedMessageSource = ParsedTextMessageSource | ParsedStructuredMessageSource;
@@ -49,13 +48,6 @@ export function parseMessageSource(
 
 export function textMessage(content: string): ParsedTextMessageSource {
   return { format: 'text', payload: { content } };
-}
-
-export function resolveAttachmentSource(source: string, baseDirectory: string): string {
-  if (source.trim().length === 0) return source;
-  if (/^[A-Za-z]:[\\/]/.test(source)) return source;
-  if (/^[A-Za-z][A-Za-z\d+.-]*:\/\//.test(source)) return source;
-  return resolve(baseDirectory, source);
 }
 
 function parserOrder(extension: string | undefined): readonly MessageFormat[] {
@@ -91,26 +83,20 @@ function structuredMessage(
   return {
     ...(target === undefined ? {} : { target }),
     format,
-    payload: mapStructuredPayload(payloadInput, baseDirectory)
+    payload: mapStructuredPayload(payloadInput),
+    basePath: baseDirectory
   };
 }
 
-function mapStructuredPayload(
-  input: Readonly<Record<string, unknown>>,
-  baseDirectory: string
-): PushPayload {
+function mapStructuredPayload(input: Readonly<Record<string, unknown>>): PushPayload {
   const output = { ...input } as Record<string, unknown>;
 
-  if (Array.isArray(input.attachments)) {
-    output.attachments = input.attachments.map((source) =>
-      typeof source === 'string' ? resolveAttachmentSource(source, baseDirectory) : source
-    );
+  if (isRecord(input.param)) {
+    output.param = new Map(Object.entries(input.param));
   }
   if (Array.isArray(input.content)) {
     output.content = input.content.map((item) =>
-      isRecord(item) && item.type === 'attachment'
-        ? mapAttachmentContent(item, baseDirectory)
-        : item
+      isRecord(item) && item.type === 'attachment' ? mapAttachmentContent(item) : item
     );
   }
 
@@ -118,8 +104,7 @@ function mapStructuredPayload(
 }
 
 function mapAttachmentContent(
-  input: Readonly<Record<string, unknown>>,
-  baseDirectory: string
+  input: Readonly<Record<string, unknown>>
 ): Readonly<Record<string, unknown>> {
   if (input.media_type !== undefined && input.mediaType !== undefined) {
     throw new MessageInputError(
@@ -131,9 +116,6 @@ function mapAttachmentContent(
   const { media_type: mediaType, ...content } = input;
   return {
     ...content,
-    ...(typeof content.source === 'string'
-      ? { source: resolveAttachmentSource(content.source, baseDirectory) }
-      : {}),
     ...(mediaType === undefined ? {} : { mediaType })
   };
 }

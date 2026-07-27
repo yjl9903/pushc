@@ -4,12 +4,8 @@ import { dirname, extname, resolve } from 'node:path';
 import type { PushPayload } from '@pushc/core';
 
 import { CliUsageError, MessageInputError } from '../error.js';
-import {
-  parseMessageSource,
-  resolveAttachmentSource,
-  textMessage,
-  type ParsedMessageSource
-} from './message.js';
+import { isRecord } from '../utils/value.js';
+import { parseMessageSource, textMessage, type ParsedMessageSource } from './message.js';
 import { applyParamOverrides } from './params.js';
 
 export { parseParamEntries } from './params.js';
@@ -20,7 +16,7 @@ export interface ResolveMessageInputOptions {
   stdin?: NodeJS.ReadableStream & { isTTY?: boolean };
   target?: string;
   title?: string;
-  param?: Readonly<Record<string, string>>;
+  param?: ReadonlyMap<string, string>;
   attachments?: readonly string[];
   cwd?: string;
 }
@@ -28,6 +24,7 @@ export interface ResolveMessageInputOptions {
 export interface ParsedMessageInput {
   readonly target?: string;
   readonly payload: PushPayload;
+  readonly basePath?: string;
 }
 
 export async function resolveMessageInput(
@@ -41,7 +38,7 @@ export async function resolveMessageInput(
     );
   }
 
-  const cwd = options.cwd ?? process.cwd();
+  const cwd = resolve(options.cwd ?? process.cwd());
   const attachments = options.attachments ?? [];
   const parsed = await readMessageSource(content, options.file, options.stdin, attachments, cwd);
 
@@ -50,24 +47,23 @@ export async function resolveMessageInput(
     const payload = applyParamOverrides(parsed.payload, options.param);
     return {
       payload: options.title === undefined ? payload : { ...payload, title: options.title },
+      ...(hasAttachmentInput(payload) ? { basePath: parsed.basePath } : {}),
       ...(parsed.target === undefined ? {} : { target: parsed.target }),
       ...(options.target === undefined ? {} : { target: options.target })
     };
   }
 
-  const resolvedAttachments =
-    attachments.length === 0
-      ? undefined
-      : attachments.map((source) => resolveAttachmentSource(source, cwd));
-  if (parsed.payload.content.trim().length === 0 && resolvedAttachments === undefined) {
+  const attachmentInput = attachments.length === 0 ? undefined : [...attachments];
+  if (parsed.payload.content.trim().length === 0 && attachmentInput === undefined) {
     throw new MessageInputError('MESSAGE_EMPTY', 'Message content must not be empty.');
   }
 
   return {
     target: options.target,
+    ...(attachmentInput === undefined ? {} : { basePath: cwd }),
     payload: {
       content: parsed.payload.content,
-      ...(resolvedAttachments === undefined ? {} : { attachments: resolvedAttachments }),
+      ...(attachmentInput === undefined ? {} : { attachments: attachmentInput }),
       ...(options.title === undefined ? {} : { title: options.title }),
       ...(options.param === undefined ? {} : { param: options.param })
     }
@@ -114,6 +110,14 @@ function assertNoStructuredMessageAttachments(options: ResolveMessageInputOption
   if (options.attachments !== undefined) {
     throw new CliUsageError('--attachment cannot be combined with a structured message.');
   }
+}
+
+function hasAttachmentInput(payload: PushPayload): boolean {
+  if (Array.isArray(payload.attachments) && payload.attachments.length > 0) return true;
+  return (
+    Array.isArray(payload.content) &&
+    payload.content.some((item) => isRecord(item) && item.type === 'attachment')
+  );
 }
 
 async function readStream(stream: NodeJS.ReadableStream): Promise<string> {

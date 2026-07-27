@@ -1,4 +1,5 @@
 import { PushError } from './error.js';
+import { renderTemplate, type TemplateContext } from './template.js';
 import type { PushAttachmentContent, PushContent, PushTextContent } from './types.js';
 import { isRecord } from './utils/value.js';
 
@@ -9,20 +10,24 @@ const ATTACHMENT_CONTENT_FIELDS = new Set(['type', 'source', 'name', 'mediaType'
 export function normalizeContent(
   input: unknown,
   attachmentInput: unknown,
-  hasAttachments: boolean
+  hasAttachments: boolean,
+  templateContext: TemplateContext
 ): readonly PushContent[] {
-  const attachments = parseAttachmentInputs(attachmentInput, hasAttachments);
+  const attachments = parseAttachmentInputs(attachmentInput, hasAttachments, templateContext);
   let content: PushContent[];
 
   if (typeof input === 'string') {
-    content = [...attachments, textContent(input)];
+    content = [...attachments, textContent(input, templateContext)];
   } else if (Array.isArray(input)) {
     const stringInput = input.length === 0 || input.every((item) => typeof item === 'string');
     if (stringInput) {
-      content = [...attachments, ...(input as readonly string[]).map(textContent)];
+      content = [
+        ...attachments,
+        ...(input as readonly string[]).map((text) => textContent(text, templateContext))
+      ];
     } else {
       if (!input.every(isRecord) || hasAttachments) throw invalidContent();
-      content = input.map(parseContent);
+      content = input.map((item) => parseContent(item, templateContext));
     }
   } else {
     throw invalidContent();
@@ -32,53 +37,58 @@ export function normalizeContent(
   return content;
 }
 
-function parseAttachmentInputs(input: unknown, present: boolean): readonly PushAttachmentContent[] {
+function parseAttachmentInputs(
+  input: unknown,
+  present: boolean,
+  templateContext: TemplateContext
+): readonly PushAttachmentContent[] {
   if (!present) return [];
   if (!Array.isArray(input)) throw invalidContent();
-  if (input.some((source) => typeof source !== 'string' || source.trim().length === 0)) {
-    throw invalidContent();
-  }
-  return input.map((source) => attachmentContent({ type: 'attachment', source }));
+  if (input.some((source) => typeof source !== 'string')) throw invalidContent();
+  return input.map((source) => attachmentContent({ type: 'attachment', source }, templateContext));
 }
 
-function parseContent(input: Readonly<Record<string, unknown>>): PushContent {
+function parseContent(
+  input: Readonly<Record<string, unknown>>,
+  templateContext: TemplateContext
+): PushContent {
   if (input.type === 'text') {
     assertAllowedFields(input, TEXT_CONTENT_FIELDS);
     if (typeof input.text !== 'string') throw invalidContent();
-    return textContent(input.text);
+    return textContent(input.text, templateContext);
   }
   if (input.type === 'attachment') {
     assertAllowedFields(input, ATTACHMENT_CONTENT_FIELDS);
-    return attachmentContent(input);
+    return attachmentContent(input, templateContext);
   }
   throw invalidContent();
 }
 
-function textContent(text: string): PushTextContent {
-  return { type: 'text', text };
+function textContent(text: string, templateContext: TemplateContext): PushTextContent {
+  return { type: 'text', text: renderTemplate(text, templateContext) };
 }
 
-function attachmentContent(input: Readonly<Record<string, unknown>>): PushAttachmentContent {
-  if (typeof input.source !== 'string' || input.source.trim().length === 0) {
-    throw invalidContent();
-  }
-  if (
-    input.name !== undefined &&
-    (typeof input.name !== 'string' || input.name.trim().length === 0)
-  ) {
-    throw invalidContent();
-  }
-  if (
-    input.mediaType !== undefined &&
-    (typeof input.mediaType !== 'string' || !MEDIA_TYPE_PATTERN.test(input.mediaType))
-  ) {
-    throw invalidContent();
-  }
+function attachmentContent(
+  input: Readonly<Record<string, unknown>>,
+  templateContext: TemplateContext
+): PushAttachmentContent {
+  if (typeof input.source !== 'string') throw invalidContent();
+  if (input.name !== undefined && typeof input.name !== 'string') throw invalidContent();
+  if (input.mediaType !== undefined && typeof input.mediaType !== 'string') throw invalidContent();
+
+  const source = renderTemplate(input.source, templateContext);
+  const name = input.name === undefined ? undefined : renderTemplate(input.name, templateContext);
+  const mediaType =
+    input.mediaType === undefined ? undefined : renderTemplate(input.mediaType, templateContext);
+  if (source.trim().length === 0) throw invalidContent();
+  if (name !== undefined && name.trim().length === 0) throw invalidContent();
+  if (mediaType !== undefined && !MEDIA_TYPE_PATTERN.test(mediaType)) throw invalidContent();
+
   return {
     type: 'attachment',
-    source: input.source,
-    ...(input.name === undefined ? {} : { name: input.name as string }),
-    ...(input.mediaType === undefined ? {} : { mediaType: input.mediaType as string })
+    source,
+    ...(name === undefined ? {} : { name }),
+    ...(mediaType === undefined ? {} : { mediaType })
   };
 }
 

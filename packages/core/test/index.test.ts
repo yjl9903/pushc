@@ -4,6 +4,7 @@ import {
   PushClient,
   PushError,
   formatDestination,
+  renderTemplate,
   type NormalizedPushPayload,
   type PushAdapterOperationOptions,
   type PushDispatchResult,
@@ -107,6 +108,57 @@ function createClient(adapter = new MemoryAdapter()): PushClient {
   client.adapters.register('memory', adapter);
   return client;
 }
+
+describe('templates', () => {
+  it('scans once, supports fallback, and preserves unknown expressions', () => {
+    expect(
+      renderTemplate(
+        String.raw`{{ message }}|{{title:-alpha:-beta}}|{{param.empty:-x}}|{{param.spaced:-x}}|{{param.inject}}|\{{title}}|{{unknown}}|{{`,
+        {
+          variables: new Map([
+            ['message', '{{title}}'],
+            ['title', '']
+          ]),
+          namespaces: new Map([
+            [
+              'param',
+              new Map([
+                ['empty', ''],
+                ['spaced', ' '],
+                ['inject', '{{message}}']
+              ])
+            ]
+          ])
+        }
+      )
+    ).toBe('{{title}}|alpha:-beta|x| |{{message}}|{{title}}|{{unknown}}|{{');
+  });
+
+  it('resolves exact namespace keys and treats missing known values as empty', () => {
+    expect(
+      renderTemplate('{{title}}|{{param.deploy.group}}|{{param.missing}}|{{other.value}}', {
+        variables: new Map([['title', undefined]]),
+        namespaces: new Map([['param', new Map([['deploy.group', 'production']])]])
+      })
+    ).toBe('|production||{{other.value}}');
+  });
+
+  it('preserves namespace expressions with invalid keys', () => {
+    expect(
+      renderTemplate('{{param..name}}|{{param._name:-fallback}}', {
+        namespaces: new Map([['param', new Map()]])
+      })
+    ).toBe('{{param..name}}|{{param._name:-fallback}}');
+  });
+
+  it('does not read inherited namespace properties', () => {
+    expect(
+      renderTemplate('{{param.constructor:-missing}}|{{param.toString:-missing}}', {
+        namespaces: new Map([['param', new Map()]])
+      })
+    ).toBe('missing|missing');
+  });
+});
 
 describe('PushTargets', () => {
   it('stores resolved targets and provides Map-like APIs', () => {
@@ -246,7 +298,7 @@ describe('send boundaries', () => {
       client.send('memory:ops', {
         content: 'ready',
         title: '',
-        param: { 'deploy.group': 'production' }
+        param: new Map([['deploy.group', 'production']])
       })
     ).resolves.toMatchInlineSnapshot(`
       {
@@ -283,18 +335,24 @@ describe('send boundaries', () => {
     `);
   });
 
-  it('normalizes payload without retaining input arrays and preserves signal identity', async () => {
+  it('normalizes payload and passes operation context without retaining input arrays', async () => {
     const adapter = new MemoryAdapter();
-    const param = { channel: 'ops', key: 'value' };
+    const param = new Map([
+      ['constructor', 'safe'],
+      ['channel', 'ops'],
+      ['key', 'value']
+    ]);
     const attachments = ['photo.png', 'report.pdf'];
     const signal = new AbortController().signal;
+    const basePath = '/messages';
 
     await adapter.send(
       undefined,
       { content: ' hello ', attachments, title: '', param },
-      { signal, dryRun: false }
+      { signal, dryRun: false, basePath }
     );
     attachments.push('later.txt');
+    param.set('key', 'changed');
 
     const context = adapter.contexts[0]!;
     expect(context.payload.content).toEqual([
@@ -303,13 +361,16 @@ describe('send boundaries', () => {
       { type: 'text', text: ' hello ' }
     ]);
     expect(context.payload.title).toBe('');
-    expect(context.payload.param).toMatchInlineSnapshot(`
-      {
-        "channel": "ops",
-        "key": "value",
-      }
-    `);
+    expect(context.payload.param).toEqual(
+      new Map([
+        ['constructor', 'safe'],
+        ['channel', 'ops'],
+        ['key', 'value']
+      ])
+    );
+    expect(context.payload.param).not.toBe(param);
     expect(context.options.signal).toBe(signal);
+    expect(context.options.basePath).toBe(basePath);
     expect(context.options).not.toHaveProperty('dryRun');
   });
 
@@ -354,6 +415,79 @@ describe('send boundaries', () => {
     ]);
   });
 
+  it('renders every content input form from title and params', async () => {
+    const adapter = new MemoryAdapter();
+
+    await adapter.send(undefined, {
+      content: 'Deploy {{param.environment}} as {{title}}',
+      attachments: ['reports/{{param.report}}'],
+      title: 'release',
+      param: new Map([
+        ['environment', 'production'],
+        ['report', 'summary.pdf']
+      ])
+    });
+    await adapter.send(undefined, {
+      content: ['{{param.first}}', '{{param.second}}'],
+      param: new Map([
+        ['first', 'one'],
+        ['second', 'two']
+      ])
+    });
+    await adapter.send(undefined, {
+      content: [
+        { type: 'text', text: '{{title}}: {{param.status}}' },
+        {
+          type: 'attachment',
+          source: 'reports/{{param.file}}',
+          name: '{{param.name}}',
+          mediaType: '{{param.media_type}}'
+        }
+      ],
+      title: 'Build',
+      param: new Map([
+        ['status', 'ready'],
+        ['file', 'report.bin'],
+        ['name', 'report.pdf'],
+        ['media_type', 'application/pdf']
+      ])
+    });
+
+    expect(adapter.contexts.map(({ payload }) => payload.content)).toEqual([
+      [
+        { type: 'attachment', source: 'reports/summary.pdf' },
+        { type: 'text', text: 'Deploy production as release' }
+      ],
+      [
+        { type: 'text', text: 'one' },
+        { type: 'text', text: 'two' }
+      ],
+      [
+        { type: 'text', text: 'Build: ready' },
+        {
+          type: 'attachment',
+          source: 'reports/report.bin',
+          name: 'report.pdf',
+          mediaType: 'application/pdf'
+        }
+      ]
+    ]);
+  });
+
+  it('renders content once and leaves message unavailable during normalization', async () => {
+    const adapter = new MemoryAdapter();
+
+    await adapter.send(undefined, {
+      content: String.raw`\{{title}}|{{param.inject}}|{{message}}`,
+      title: 'release',
+      param: new Map([['inject', '{{title}}']])
+    });
+
+    expect(adapter.contexts[0]?.payload.content).toEqual([
+      { type: 'text', text: '{{title}}|{{title}}|{{message}}' }
+    ]);
+  });
+
   it.each([
     [{ content: '' }],
     [{ content: '   ' }],
@@ -366,11 +500,17 @@ describe('send boundaries', () => {
     [{ content: 'ok', param: [] }],
     [{ content: 'ok', param: { bad: 1 } }],
     [{ content: 'ok', param: { 'bad key': 'value' } }],
+    [{ content: 'ok', param: new Map([['bad', 1]]) }],
+    [{ content: 'ok', param: new Map([['bad key', 'value']]) }],
     [{ content: 'ok', unknown: true }],
     [{ content: ['ok', { type: 'text', text: 'mixed' }] }],
     [{ content: [{ type: 'napcat:at', qq: 'all' }] }],
     [{ content: [{ type: 'attachment', source: '' }] }],
     [{ content: [{ type: 'attachment', source: 'x', mediaType: 'invalid' }] }],
+    [{ content: '{{title}}' }],
+    [{ content: '', attachments: ['{{param.missing}}'] }],
+    [{ content: [{ type: 'attachment', source: 'x', name: '{{param.missing}}' }] }],
+    [{ content: [{ type: 'attachment', source: 'x', mediaType: '{{param.missing}}' }] }],
     [{ content: [{ type: 'text', text: 'ok' }], attachments: [] }]
   ])('rejects invalid payload %#', async (payload) => {
     await expect(new MemoryAdapter().send(undefined, payload as never)).resolves.toMatchObject({
@@ -426,6 +566,14 @@ describe('send boundaries', () => {
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
     await expect(
       adapter.send(undefined, { content: 'ok' }, { dryRun: 'true' } as never)
+    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
+    await expect(
+      adapter.send(undefined, { content: 'ok' }, { basePath: '' })
+    ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
+    await expect(
+      adapter.send(undefined, { content: 'ok' }, {
+        basePath: new URL('file:///messages')
+      } as never)
     ).resolves.toMatchObject({ success: false, error: { code: 'INVALID_SEND_OPTIONS' } });
 
     const reason = new Error('cancelled');

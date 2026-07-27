@@ -136,20 +136,21 @@ attachments appear in a precise sequence. Omit `param` when the message does not
 ```json
 {
   "target": "alerts:release",
-  "title": "Build completed",
+  "title": "Deployment completed",
   "param": {
     "environment": "production",
-    "group": "deployments"
+    "report_file": "report.pdf",
+    "report_name": "deployment-report.pdf"
   },
   "content": [
     {
       "type": "text",
-      "text": "Production deployment succeeded.\n"
+      "text": "{{title}} for {{param.environment}}.\n"
     },
     {
       "type": "attachment",
-      "source": "./report.pdf",
-      "name": "deployment-report.pdf",
+      "source": "./{{param.report_file}}",
+      "name": "{{param.report_name}}",
       "media_type": "application/pdf"
     },
     {
@@ -159,6 +160,11 @@ attachments appear in a precise sequence. Omit `param` when the message does not
   ]
 }
 ```
+
+Use `{{title}}` and `{{param.key}}` in text and attachment string fields. Use
+`{{param.key:-fallback}}` when an empty or missing value needs a default. Substitutions run once;
+do not expect values containing another expression to be expanded recursively. `{{message}}` is
+reserved for Webhook request configuration and is not a message-content variable.
 
 Write relative attachment paths relative to the directory containing the message file.
 

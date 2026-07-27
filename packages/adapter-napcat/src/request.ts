@@ -1,5 +1,6 @@
 import type {
   NormalizedPushPayload,
+  PushAdapterOperationOptions,
   PushAttachmentContent,
   PushPreparedRequest
 } from '@pushc/core';
@@ -39,12 +40,16 @@ export async function prepareNapCatRequest(
   target: NapCatTargetConfig,
   payload: NormalizedPushPayload,
   maxAttachmentBytes: number,
-  signal?: AbortSignal
+  options: PushAdapterOperationOptions
 ): Promise<PreparedNapCatRequest> {
   const attachmentContent = payload.content.filter(
     (item): item is PushAttachmentContent => item.type === 'attachment'
   );
-  const attachments = await prepareNapCatAttachments(attachmentContent, maxAttachmentBytes, signal);
+  const attachments = await prepareNapCatAttachments(
+    attachmentContent,
+    maxAttachmentBytes,
+    options
+  );
   const recipient =
     'user_id' in target
       ? ({ user_id: Number(target.user_id) } as const)

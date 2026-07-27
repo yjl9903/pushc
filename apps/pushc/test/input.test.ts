@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -29,17 +29,18 @@ describe('resolveMessageInput', () => {
         content: ['hello', 'agent'],
         target: 'qq:ops',
         title: '',
-        param: { group: 'deployments' },
+        param: new Map([['group', 'deployments']]),
         attachments: ['./photo.png'],
         cwd
       })
     ).resolves.toEqual({
       target: 'qq:ops',
+      basePath: cwd,
       payload: {
         content: 'hello agent',
-        attachments: [resolve(cwd, 'photo.png')],
+        attachments: ['./photo.png'],
         title: '',
-        param: { group: 'deployments' }
+        param: new Map([['group', 'deployments']])
       }
     });
   });
@@ -55,7 +56,7 @@ describe('resolveMessageInput', () => {
     });
   });
 
-  it('parses JSON documents and maps attachment fields and paths without normalizing content', async () => {
+  it('parses JSON documents and preserves attachment sources with their base path', async () => {
     const root = await tempDirectory();
     const file = join(root, 'message.json');
     await writeFile(
@@ -63,6 +64,7 @@ describe('resolveMessageInput', () => {
       JSON.stringify({
         target: 'qq:ops',
         title: 'Release',
+        param: { environment: 'production' },
         content: [
           { type: 'text', text: 'before' },
           {
@@ -77,13 +79,15 @@ describe('resolveMessageInput', () => {
 
     await expect(resolveMessageInput({ file })).resolves.toEqual({
       target: 'qq:ops',
+      basePath: root,
       payload: {
         title: 'Release',
+        param: new Map([['environment', 'production']]),
         content: [
           { type: 'text', text: 'before' },
           {
             type: 'attachment',
-            source: join(root, 'report.pdf'),
+            source: './report.pdf',
             name: 'release.pdf',
             mediaType: 'application/pdf'
           }
@@ -92,7 +96,7 @@ describe('resolveMessageInput', () => {
     });
   });
 
-  it('parses TOML shorthand and resolves its attachment list from the file directory', async () => {
+  it('parses TOML shorthand and preserves its attachment list with the file base path', async () => {
     const root = await tempDirectory();
     const file = join(root, 'message.toml');
     await writeFile(
@@ -106,9 +110,10 @@ describe('resolveMessageInput', () => {
 
     await expect(resolveMessageInput({ file })).resolves.toEqual({
       target: 'qq:ops',
+      basePath: root,
       payload: {
         content: ['first', 'second'],
-        attachments: [join(root, 'report.pdf'), 'https://example.com/photo.png']
+        attachments: ['./report.pdf', 'https://example.com/photo.png']
       }
     });
   });
@@ -166,14 +171,21 @@ describe('resolveMessageInput', () => {
         file,
         target: 'qq:override',
         title: 'cli',
-        param: { group: 'cli', empty: '' }
+        param: new Map([
+          ['group', 'cli'],
+          ['empty', '']
+        ])
       })
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
       target: 'qq:override',
       payload: {
         content: 'hello',
         title: 'cli',
-        param: { group: 'cli', environment: 'production', empty: '' }
+        param: new Map([
+          ['group', 'cli'],
+          ['environment', 'production'],
+          ['empty', '']
+        ])
       }
     });
     await expect(resolveMessageInput({ file, attachments: ['./photo.png'] })).rejects.toMatchObject(
@@ -192,7 +204,7 @@ describe('resolveMessageInput', () => {
     const result = await resolveMessageInput({
       file,
       target: 'qq',
-      param: { group: 'cli' }
+      param: new Map([['group', 'cli']])
     });
 
     expect(result.payload.param).toBeInstanceOf(Date);
@@ -226,12 +238,14 @@ describe('resolveMessageInput', () => {
 
     await expect(resolveMessageInput({ file: astFile, target: 'qq' })).resolves.toEqual({
       target: 'qq',
+      basePath: root,
       payload: {
         content: [{ type: 'attachment', source: '' }]
       }
     });
     await expect(resolveMessageInput({ file: shortcutFile, target: 'qq' })).resolves.toEqual({
       target: 'qq',
+      basePath: root,
       payload: {
         content: '',
         attachments: ['   ']
@@ -250,9 +264,10 @@ describe('resolveMessageInput', () => {
       })
     ).resolves.toEqual({
       target: 'qq',
+      basePath: cwd,
       payload: {
         content: '',
-        attachments: [join(cwd, 'photo.png')]
+        attachments: ['./photo.png']
       }
     });
   });

@@ -1,12 +1,13 @@
-import type {
-  NormalizedPushPayload,
-  PushAdapterOperationOptions,
-  PushDispatchResult
+import {
+  renderTemplate,
+  type NormalizedPushPayload,
+  type PushAdapterOperationOptions,
+  type PushDispatchResult
 } from '@pushc/core';
 
 import { invalidConfig, parseContentType } from './config.js';
 import { WebhookError } from './error.js';
-import { renderWebhookBody, renderWebhookTemplate } from './target.js';
+import { renderWebhookBody, webhookTemplateContext } from './template.js';
 import type {
   JsonValue,
   WebhookRequestConfig,
@@ -30,16 +31,18 @@ export function buildWebhookRequest(
   payload: NormalizedPushPayload
 ): WebhookRequestReceipt {
   try {
-    const url = parseFinalUrl(renderWebhookTemplate(target.url, payload), origin);
+    const templateContext = webhookTemplateContext(payload);
+    const url = parseFinalUrl(renderTemplate(target.url, templateContext), origin);
 
     const headers = new Headers(
       Object.entries(target.headers).map(([name, value]) => [
         name,
-        renderWebhookTemplate(value, payload)
+        renderTemplate(value, templateContext)
       ])
     );
 
-    const body = target.body === undefined ? undefined : renderWebhookBody(target.body, payload);
+    const body =
+      target.body === undefined ? undefined : renderWebhookBody(target.body, templateContext);
     if (body !== undefined) {
       const configured = parseContentType(target.content_type ?? 'application/json');
       const explicitHeader = headers.get('content-type');

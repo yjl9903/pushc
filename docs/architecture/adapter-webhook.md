@@ -45,13 +45,13 @@ null-prototype object；不额外深拷贝。TOML datetime 是 parser 标量而�
 shape 识别。二者是内部纯工具，不从 package root 导出；配置解析、请求构造和发送生命周期仍
 留在对应领域模块。
 
-## 模板
+## 请求模板
 
-可用变量是 `{{message}}`、`{{title}}` 和 `{{param.key}}`，并支持
+Webhook 复用 core 导出的通用 template scanner，不维护第二套表达式解析。请求模板可用变量
+是 `{{message}}`、`{{title}}` 和 `{{param.key}}`，并支持
 `{{variable:-fallback}}`。变量缺失或值为 `''` 时使用 fallback；无 fallback 时输出空 string。
 expression 外围 ASCII whitespace 被忽略，fallback 按第一个 `:-` 分隔且保持字面内容。
-`param.key` 的运行时查询结果只有 string 才算存在；普通 object 原型链上的同名非 string
-成员按缺失处理。
+`param.key` 通过 normalized param Map 的 `has/get` 查询，不涉及 object property 或原型链。
 
 scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非法、未知或未闭合 expression
 原样保留。`\{{...}}` 消费紧邻起始符的一个反斜杠并输出字面模板。
@@ -61,9 +61,9 @@ scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非�
 
 ## Request 构造
 
-异步 `prepareRequest(target, payload)` 将 normalized payload 的 text nodes 无分隔符拼接为
-模板变量 `message`，并拒绝任何 attachment node，再从 `target.request` 每次建立独立的
-Headers 与 JSON tree：
+异步 `prepareRequest(target, payload)` 将 core 已渲染的 normalized text nodes 无分隔符
+拼接为请求模板变量 `message`，并拒绝任何 attachment node，再从 `target.request` 每次建立
+独立的 Headers 与 JSON tree：
 
 1. 渲染 request URL、header value 和 body string value。
 2. 校验最终绝对 HTTP(S) URL、credentials 与 adapter origin。
@@ -98,7 +98,7 @@ transport、HTTP 和 abort 错误转换为统一失败 result，不做配置错�
 
 ## 测试边界
 
-测试覆盖配置默认矩阵、target merge、JSON normalization、模板 scanner、URL origin、
-Content-Type/serializer、method/body、timeout/abort、并发请求隔离、错误映射、
-多个 text node 拼接、attachment 明确拒绝、严格空 response 占位、dry run 无 Fetch、
-response receipt。
+测试覆盖配置默认矩阵、target merge、JSON normalization、core renderer 集成、URL origin、
+Content-Type/serializer、method/body、timeout/abort、并发请求隔离、错误映射、渲染后多个
+text node 拼接、attachment 明确拒绝、严格空 response 占位、dry run 无 Fetch、response
+receipt。

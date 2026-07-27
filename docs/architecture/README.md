@@ -5,7 +5,7 @@
 ## 系统目标
 
 pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通过 destination 发送 string、
-string array 或有序 text/attachment AST，以及可选标题与一层 string param。core 将所有输入
+string array 或有序 text/attachment AST，以及可选标题与 string param Map。core 将所有输入
 归一化为唯一 AST。每个 adapter 实例保存可复用连接信息并
 管理自己的 targets；target 是 adapter-specific partial config。系统当前支持通用 HTTP
 Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件与 HTTP(S) 附件。
@@ -19,7 +19,9 @@ Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件
 
 ## 模块边界
 
-- [`packages/core`](./core.md)：运行时无关的消息、target、adapter 和结果类型；负责 adapter registry、adapter 私有 target registry、发送调度和统一错误包装。
+- [`packages/core`](./core.md)：运行时无关的消息、模板、target、adapter 和结果类型；负责
+  content 模板渲染与归一化、adapter registry、adapter 私有 target registry、发送调度和
+  统一错误包装。
 - [`packages/adapter-webhook`](./adapter-webhook.md)：基于标准 `fetch` 的运行时无关 adapter，
   支持完整 target 请求覆盖、JSON/文本 serializer、payload 模板、请求头和超时。
 - [`packages/adapter-napcat`](./adapter-napcat.md)：Node.js adapter，管理 NapCat WebSocket 连接、私聊/群聊收件人、超时和发送回执。
@@ -34,10 +36,12 @@ Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件
 3. 组合层把嵌套的具名 target partial 注册到对应 `adapter.targets`；没有具名 target 时解析并校验 adapter default，随后把 adapter 注册到 client。
 4. CLI 从参数、文件或 stdin 读取消息，按后缀和 syntax 探测 JSON/TOML/text，形成 raw
    PushPayload 与可选 document target；CLI target 可覆盖 document target，CLI param 可按
-   key 覆盖 document param。
-5. client 解析 destination 并取得 adapter；base adapter 由 core 校验并 normalize payload，
-   再将省略的 target、具名字符串或临时对象解析为具体 target，并异步完成仅限本地的 request
-   preparation。
+   key 覆盖 document param。含附件时 CLI 保留 source 原文，并额外形成发送级
+   `basePath`。
+5. client 解析 destination 并取得 adapter；base adapter 由 core 校验 payload metadata，
+   渲染 content 中的 title/param 模板并 normalize 为最终 AST，再将省略的 target、具名字符
+   串或临时对象解析为具体 target，并把 base path 作为不解释的 operation context
+   传入 adapter，异步完成仅限本地的 request preparation。
 6. preparation 同时产生公开 receipt request 与内部 transport request。正常 send 进入
    `dispatchRequest` 并由 core 组合 receipt；dry-run 跳过 dispatch 和全部目标服务交互，
    返回固定带 `dryRun: true`、receipt 只含公开 request 的结果。

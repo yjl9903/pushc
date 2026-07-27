@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
 import { open, type FileHandle } from 'node:fs/promises';
-import { basename, posix, resolve } from 'node:path';
+import { basename, isAbsolute, posix, resolve } from 'node:path';
 
 import mime from 'mime';
 
-import { PushError, type PushAttachmentContent } from '@pushc/core';
+import {
+  PushError,
+  type PushAdapterOperationOptions,
+  type PushAttachmentContent
+} from '@pushc/core';
 
 import type {
   NapCatAttachmentReceiptSegment,
@@ -20,21 +24,25 @@ export interface PreparedNapCatAttachment {
 export async function prepareNapCatAttachments(
   attachments: readonly PushAttachmentContent[],
   maxBytes: number,
-  signal?: AbortSignal
+  options: PushAdapterOperationOptions
 ): Promise<readonly PreparedNapCatAttachment[]> {
   const prepared: PreparedNapCatAttachment[] = [];
   let actualLocalBytes = 0;
-  const baseDirectory = process.cwd();
+  const defaultBaseDirectory = process.cwd();
 
   for (const attachment of attachments) {
-    assertNotAborted(signal);
+    assertNotAborted(options.signal);
     const remote = parseRemoteAttachment(attachment.source);
     if (remote !== undefined) {
       prepared.push(prepareRemoteAttachment(remote, attachment));
       continue;
     }
 
-    const path = resolve(baseDirectory, attachment.source);
+    const path = resolveLocalAttachmentPath(
+      attachment.source,
+      options.basePath,
+      defaultBaseDirectory
+    );
     const name =
       attachment.name === undefined ? basename(path) : validateAttachmentName(attachment.name);
     const contents = await readLocalAttachment(
@@ -42,7 +50,7 @@ export async function prepareNapCatAttachments(
       name,
       maxBytes - actualLocalBytes,
       maxBytes,
-      signal
+      options.signal
     );
     actualLocalBytes += contents.byteLength;
 
@@ -71,6 +79,17 @@ export async function prepareNapCatAttachments(
   }
 
   return prepared;
+}
+
+function resolveLocalAttachmentPath(
+  source: string,
+  basePath: string | undefined,
+  defaultBaseDirectory: string
+): string {
+  if (isAbsolute(source)) return source;
+  if (basePath === undefined) return resolve(defaultBaseDirectory, source);
+  if (!isAbsolute(basePath)) throw invalidAttachment('Base path must be absolute.');
+  return resolve(basePath, source);
 }
 
 function parseRemoteAttachment(input: string): URL | undefined {

@@ -158,13 +158,28 @@ describe('built CLI', () => {
       const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
       const result = spawnSync(
         process.execPath,
-        [cli, 'send', '--param', 'group=cli', '--dry-run', '--config', config, '--json'],
+        [
+          cli,
+          'send',
+          '--title',
+          'CLI title',
+          '--param',
+          'group=cli',
+          '--dry-run',
+          '--config',
+          config,
+          '--json'
+        ],
         {
           encoding: 'utf8',
           input: JSON.stringify({
             target: 'webhook',
-            content: ['hello', ' ', 'world'],
-            param: { group: 42, environment: 'production' }
+            title: 'Message title',
+            content: [
+              { type: 'text', text: '{{title}}: ' },
+              { type: 'text', text: '{{param.environment}}/{{param.group}}' }
+            ],
+            param: { group: 'message', environment: 'production' }
           })
         }
       );
@@ -178,7 +193,7 @@ describe('built CLI', () => {
         receipt: {
           request: {
             body: {
-              message: 'hello world',
+              message: 'CLI title: production/cli',
               group: 'cli',
               environment: 'production'
             }
@@ -212,14 +227,22 @@ describe('built CLI', () => {
       messageFile,
       [
         'target = "qq:ops"',
-        '[[content]]',
-        'type = "text"',
-        'text = "before"',
-        '[[content]]',
-        'type = "attachment"',
-        'source = "./report.bin"',
+        '[param]',
+        'file = "report.bin"',
         'name = "report.txt"',
         'media_type = "text/plain"',
+        'remote_url = "https://files.example.com/remote.pdf"',
+        '[[content]]',
+        'type = "text"',
+        'text = "{{title}} before"',
+        '[[content]]',
+        'type = "attachment"',
+        'source = "./{{param.file}}"',
+        'name = "{{param.name}}"',
+        'media_type = "{{param.media_type}}"',
+        '[[content]]',
+        'type = "attachment"',
+        'source = "{{param.remote_url}}"',
         '[[content]]',
         'type = "text"',
         'text = "after"'
@@ -230,7 +253,20 @@ describe('built CLI', () => {
       const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
       const result = spawnSync(
         process.execPath,
-        [cli, 'send', '--file', messageFile, '--dry-run', '--config', config, '--json'],
+        [
+          cli,
+          'send',
+          '--file',
+          messageFile,
+          '--title',
+          'release',
+          '--param',
+          'name=cli-report.txt',
+          '--dry-run',
+          '--config',
+          config,
+          '--json'
+        ],
         { encoding: 'utf8' }
       );
 
@@ -246,8 +282,14 @@ describe('built CLI', () => {
             params: {
               group_id: 123,
               message: [
-                { type: 'text', data: { text: 'before' } },
-                attachmentReceipt('file', 'report.txt', 'text/plain', 'report'),
+                { type: 'text', data: { text: 'release before' } },
+                attachmentReceipt('file', 'cli-report.txt', 'text/plain', 'report'),
+                remoteAttachmentReceipt(
+                  'file',
+                  'remote.pdf',
+                  'application/pdf',
+                  'files.example.com'
+                ),
                 { type: 'text', data: { text: 'after' } }
               ]
             }

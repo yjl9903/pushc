@@ -37,7 +37,7 @@ describe('napcat adapter', () => {
     await expect(
       adapter.send(
         { group_id: '123456' },
-        { content: 'hello', title: 'ignored', param: { x: 'ignored' } },
+        { content: 'hello', title: 'ignored', param: new Map([['x', 'ignored']]) },
         { dryRun: true }
       )
     ).resolves.toEqual({
@@ -51,6 +51,112 @@ describe('napcat adapter', () => {
             message: [{ type: 'text', data: { text: 'hello' } }]
           }
         }
+      }
+    });
+    expect(factory).not.toHaveBeenCalled();
+    await adapter.destroy();
+  });
+
+  it('resolves rendered local and remote sources before applying the base path', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-napcat-template-'));
+    directories.push(root);
+    await writeFile(join(root, 'report.bin'), 'report');
+    const factory = vi.fn(() => mockClient());
+    const adapter = new NapCatAdapter({ base_url: 'ws://127.0.0.1:3001' }, { factory });
+
+    const result = await adapter.send(
+      { group_id: '123456' },
+      {
+        content: [
+          { type: 'text', text: '{{title}} {{param.status}}' },
+          {
+            type: 'attachment',
+            source: '{{param.file}}',
+            name: '{{param.name}}',
+            mediaType: '{{param.media_type}}'
+          },
+          {
+            type: 'attachment',
+            source: '{{param.remote_url}}'
+          }
+        ],
+        title: 'Build',
+        param: new Map([
+          ['status', 'ready'],
+          ['file', 'report.bin'],
+          ['name', 'release.pdf'],
+          ['media_type', 'application/pdf'],
+          ['remote_url', 'https://files.example.com/remote.pdf']
+        ])
+      },
+      { dryRun: true, basePath: root }
+    );
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      success: true,
+      receipt: {
+        request: {
+          params: {
+            message: [
+              { type: 'text', data: { text: 'Build ready' } },
+              {
+                type: 'file',
+                data: {
+                  name: 'release.pdf',
+                  media_type: 'application/pdf',
+                  encoding: 'base64'
+                }
+              },
+              remoteAttachmentReceipt('file', 'remote.pdf', 'application/pdf', 'files.example.com')
+            ]
+          }
+        }
+      }
+    });
+    expect(factory).not.toHaveBeenCalled();
+    await adapter.destroy();
+  });
+
+  it('ignores the base for rendered absolute paths and rejects relative base paths', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-napcat-absolute-template-'));
+    directories.push(root);
+    const file = join(root, 'report.bin');
+    await writeFile(file, 'report');
+    const factory = vi.fn(() => mockClient());
+    const adapter = new NapCatAdapter({ base_url: 'ws://127.0.0.1:3001' }, { factory });
+
+    await expect(
+      adapter.send(
+        { group_id: '123456' },
+        {
+          content: [{ type: 'attachment', source: '{{param.file}}' }],
+          param: new Map([['file', file]])
+        },
+        { dryRun: true, basePath: './messages' }
+      )
+    ).resolves.toMatchObject({
+      success: true,
+      receipt: {
+        request: {
+          params: {
+            message: [attachmentReceipt('file', 'report.bin', 'application/octet-stream', 'report')]
+          }
+        }
+      }
+    });
+
+    await expect(
+      adapter.send(
+        { group_id: '123456' },
+        { content: [{ type: 'attachment', source: 'report.bin' }] },
+        { dryRun: true, basePath: './messages' }
+      )
+    ).resolves.toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_MESSAGE',
+        message: expect.stringContaining('absolute')
       }
     });
     expect(factory).not.toHaveBeenCalled();
@@ -80,7 +186,11 @@ describe('napcat adapter', () => {
         { factory }
       );
       await expect(
-        adapter.send(targetConfig, { content: 'hello', title: 'ignored', param: { x: 'ignored' } })
+        adapter.send(targetConfig, {
+          content: 'hello',
+          title: 'ignored',
+          param: new Map([['x', 'ignored']])
+        })
       ).resolves.toEqual({
         success: true,
         receipt: {

@@ -117,7 +117,10 @@ export abstract class PushAdapter<
       const normalizedOptions = normalizeSendOptions(options);
       assertNotAborted(normalizedOptions.signal);
       const operationOptions: PushAdapterOperationOptions = {
-        ...(normalizedOptions.signal === undefined ? {} : { signal: normalizedOptions.signal })
+        ...(normalizedOptions.signal === undefined ? {} : { signal: normalizedOptions.signal }),
+        ...(normalizedOptions.basePath === undefined
+          ? {}
+          : { basePath: normalizedOptions.basePath })
       };
 
       prepared = await this.prepareRequest(
