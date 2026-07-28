@@ -31,6 +31,32 @@ Or install pushc CLI manually.
 npm install -g pushc
 ```
 
+## Use case
+
+Agent regularly checks 前橋ウィッチーズ official sources and sends notifications via QQ.
+
+**CRON prompt:**
+
+```text
+Monitor @maebashiwitches and its website. Use pushc to send important updates and images separately to
+qq:event.
+```
+
+**Result:**
+
+For example, when the 2nd anniversary Live merchandise preorder opens, the agent runs:
+
+```bash
+pushc send --target qq:event "前橋ウィッチーズ 2 周年 Live 更新
+- 商品事前通販已开始，8 月 2 日截止
+- https://x.com/maebashiwitches/status/2080578986950746216"
+
+pushc send --target qq:event \
+  --attachment ./events/maebashi-witches/2026/assets/2nd-live-goods.jpg
+```
+
+Your QQ will receives a text summary followed by separate image messages.
+
 ## Use the CLI
 
 ### Configure
