@@ -3,7 +3,7 @@ name: pushc
 description: Use when the user asks to configure pushc or send a notification with pushc.
 metadata:
   author: OneKuma
-  version: '0.0.0'
+  version: '0.1.0'
 ---
 
 # Pushc

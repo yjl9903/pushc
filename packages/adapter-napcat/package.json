@@ -1,6 +1,6 @@
 {
   "name": "@pushc/adapter-napcat",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "NapCat QQ adapter for pushc",
   "keywords": [
     "pushc",

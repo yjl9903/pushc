@@ -1,6 +1,6 @@
 {
   "name": "@pushc/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Runtime-neutral message push orchestration for pushc",
   "keywords": [
     "pushc",
