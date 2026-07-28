@@ -5,15 +5,20 @@ import { isJsonObject, isJsonValue } from './utils/json.js';
 import { isRecord } from './utils/record.js';
 import type {
   JsonValue,
+  WebhookBodyAssertion,
   WebhookConfig,
+  WebhookHeaderAssertion,
   WebhookRequestConfig,
   WebhookResponseConfig,
+  WebhookResponseStatus,
   WebhookTargetConfig
 } from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const JSON_POINTER_PATTERN = /^(?:\/(?:[^~]|~[01])*)*$/;
+const RESPONSE_KEYS = new Set(['status', 'body', 'headers']);
 const requestSchema = z.strictObject({
   url: z.string().optional(),
   method: z.string().optional(),
@@ -45,7 +50,13 @@ interface ParsedWebhookRequestPartial {
 
 interface ParsedWebhookTargetPartial {
   readonly request?: ParsedWebhookRequestPartial;
-  readonly response?: WebhookResponseConfig;
+  readonly response?: ParsedWebhookResponsePartial;
+}
+
+interface ParsedWebhookResponsePartial {
+  readonly status?: WebhookResponseStatus;
+  readonly body?: Readonly<Record<string, WebhookBodyAssertion>>;
+  readonly headers?: Readonly<Record<string, WebhookHeaderAssertion>>;
 }
 
 export interface ParsedContentType {
@@ -70,7 +81,14 @@ export function parseWebhookConfig(input: unknown): WebhookConfig {
     return {
       url,
       request,
-      response: parseWebhookResponse(result.data.response ?? {})
+      response: resolveWebhookResponse(
+        {
+          status: '2xx',
+          body: {},
+          headers: {}
+        },
+        parseWebhookResponseInput(result.data.response ?? {})
+      )
     };
   } catch (cause) {
     if (cause instanceof WebhookError) throw cause;
@@ -87,7 +105,7 @@ export function parseWebhookTargetPartial(input: unknown): ParsedWebhookTargetPa
       : { request: parseWebhookRequestInput(result.data.request) }),
     ...(result.data.response === undefined
       ? {}
-      : { response: parseWebhookResponse(result.data.response) })
+      : { response: parseWebhookResponseInput(result.data.response) })
   };
 }
 
@@ -97,7 +115,7 @@ export function resolveWebhookTarget(
 ): WebhookTargetConfig {
   return {
     request: resolveWebhookRequest(base.request, partial.request ?? {}),
-    response: {}
+    response: resolveWebhookResponse(base.response, partial.response ?? {})
   };
 }
 
@@ -136,9 +154,89 @@ function parseWebhookRequestInput(input: unknown): ParsedWebhookRequestPartial {
   };
 }
 
-function parseWebhookResponse(input: unknown): WebhookResponseConfig {
-  if (!isRecord(input) || Object.keys(input).length > 0) throw invalidConfig();
-  return {};
+function parseWebhookResponseInput(input: unknown): ParsedWebhookResponsePartial {
+  if (!isRecord(input) || Object.keys(input).some((key) => !RESPONSE_KEYS.has(key))) {
+    throw invalidConfig();
+  }
+  return {
+    ...(!Object.hasOwn(input, 'status') ? {} : { status: parseResponseStatus(input.status) }),
+    ...(!Object.hasOwn(input, 'body') ? {} : { body: parseBodyAssertions(input.body) }),
+    ...(!Object.hasOwn(input, 'headers') ? {} : { headers: parseHeaderAssertions(input.headers) })
+  };
+}
+
+function resolveWebhookResponse(
+  base: WebhookResponseConfig,
+  partial: ParsedWebhookResponsePartial
+): WebhookResponseConfig {
+  return {
+    status: partial.status ?? base.status,
+    body: partial.body === undefined ? { ...base.body } : { ...partial.body },
+    headers: partial.headers === undefined ? { ...base.headers } : { ...partial.headers }
+  };
+}
+
+function parseResponseStatus(input: unknown): WebhookResponseStatus {
+  if (input === '2xx') return input;
+  const values = Array.isArray(input) ? input : [input];
+  if (
+    values.length === 0 ||
+    values.some((value) => !Number.isInteger(value) || value < 100 || value > 599) ||
+    new Set(values).size !== values.length
+  ) {
+    throw invalidConfig();
+  }
+  return [...values] as number[];
+}
+
+function parseBodyAssertions(input: unknown): Readonly<Record<string, WebhookBodyAssertion>> {
+  if (!isRecord(input)) throw invalidConfig();
+  const assertions: Record<string, WebhookBodyAssertion> = {};
+  for (const [path, assertion] of Object.entries(input)) {
+    if (!JSON_POINTER_PATTERN.test(path)) throw invalidConfig();
+    assertions[path] = parseBodyAssertion(assertion);
+  }
+  return assertions;
+}
+
+function parseHeaderAssertions(input: unknown): Readonly<Record<string, WebhookHeaderAssertion>> {
+  if (!isRecord(input)) throw invalidConfig();
+  const assertions = new Map<string, WebhookHeaderAssertion>();
+  for (const [name, assertion] of Object.entries(input)) {
+    const normalizedName = name.toLowerCase();
+    if (!HTTP_TOKEN_PATTERN.test(name) || assertions.has(normalizedName)) {
+      throw invalidConfig();
+    }
+    assertions.set(normalizedName, parseHeaderAssertion(assertion));
+  }
+  return Object.fromEntries(assertions);
+}
+
+function parseBodyAssertion(input: unknown): WebhookBodyAssertion {
+  const operation = parseAssertionOperation(input);
+  if ('exists' in operation) return operation;
+  if (!isJsonValue(operation.equals)) throw invalidConfig();
+  return { equals: operation.equals };
+}
+
+function parseHeaderAssertion(input: unknown): WebhookHeaderAssertion {
+  const operation = parseAssertionOperation(input);
+  if ('exists' in operation) return operation;
+  if (typeof operation.equals !== 'string') throw invalidConfig();
+  return { equals: operation.equals };
+}
+
+function parseAssertionOperation(
+  input: unknown
+): { readonly equals: unknown } | { readonly exists: boolean } {
+  if (!isRecord(input)) throw invalidConfig();
+  const keys = Object.keys(input);
+  if (keys.length !== 1) throw invalidConfig();
+  if (keys[0] === 'equals') return { equals: input.equals };
+  if (keys[0] === 'exists' && typeof input.exists === 'boolean') {
+    return { exists: input.exists };
+  }
+  throw invalidConfig();
 }
 
 function resolveWebhookRequest(
@@ -212,19 +310,19 @@ function parseTimeout(input: number): number {
 
 function parseHeaders(input: unknown): Readonly<Record<string, string>> {
   if (!isRecord(input)) throw invalidConfig();
-  const headers: Record<string, string> = {};
+  const headers = new Map<string, string>();
   for (const [name, value] of Object.entries(input)) {
     const normalizedName = name.toLowerCase();
     if (
       !HTTP_TOKEN_PATTERN.test(name) ||
       typeof value !== 'string' ||
-      headers[normalizedName] !== undefined
+      headers.has(normalizedName)
     ) {
       throw invalidConfig();
     }
-    headers[normalizedName] = value;
+    headers.set(normalizedName, value);
   }
-  return headers;
+  return Object.fromEntries(headers);
 }
 
 function mergeHeaders(

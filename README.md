@@ -46,7 +46,8 @@ title = "{{title:-pushc}}"
 group = "{{param.group:-pushc}}"
 level = "active"
 
-[adapters.bark.response]
+[adapters.bark.response.body]
+"/code" = { equals = 200 }
 
 [adapters.qq]
 type = "napcat"

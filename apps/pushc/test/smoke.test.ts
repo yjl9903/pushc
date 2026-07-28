@@ -1,6 +1,7 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -201,6 +202,100 @@ describe('built CLI', () => {
         }
       });
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('evaluates webhook response body and header rules from TOML', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-response-assertions-'));
+    const config = join(root, 'config.toml');
+    const server = createServer((_request, response) => {
+      response.statusCode = 202;
+      response.setHeader('content-type', 'application/json');
+      response.setHeader('x-result', 'accepted');
+      response.end(JSON.stringify({ code: 200 }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('Expected an HTTP server address.');
+    }
+
+    const writeConfig = (expectedCode: number) =>
+      writeFile(
+        config,
+        [
+          '[adapters.webhook]',
+          'type = "webhook"',
+          `url = "http://127.0.0.1:${address.port}/hook"`,
+          '[adapters.webhook.response]',
+          'status = 202',
+          '[adapters.webhook.response.body]',
+          `"/code" = { equals = ${expectedCode} }`,
+          '[adapters.webhook.response.headers]',
+          'x-result = { equals = "accepted" }'
+        ].join('\n')
+      );
+
+    try {
+      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+      await writeConfig(200);
+      const success = await runCli(cli, [
+        'send',
+        'message',
+        '--target',
+        'webhook',
+        '--config',
+        config,
+        '--json'
+      ]);
+      expect(success.status).toBe(0);
+      expect(success.stderr).toBe('');
+      expect(JSON.parse(success.stdout)).toMatchObject({
+        success: true,
+        adapter: 'webhook',
+        receipt: {
+          response: {
+            status: 202,
+            headers: { 'x-result': 'accepted' },
+            body: { code: 200 }
+          }
+        }
+      });
+
+      await writeConfig(201);
+      const failure = await runCli(cli, [
+        'send',
+        'message',
+        '--target',
+        'webhook',
+        '--config',
+        config,
+        '--json'
+      ]);
+      expect(failure.status).toBe(1);
+      expect(failure.stdout).toBe('');
+      expect(JSON.parse(failure.stderr)).toMatchObject({
+        success: false,
+        adapter: 'webhook',
+        receipt: {
+          response: {
+            status: 202,
+            body: { code: 200 }
+          }
+        },
+        error: {
+          code: 'SEND_FAILED',
+          message: 'Webhook response body assertion failed at "/code".'
+        }
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -444,4 +539,23 @@ function remoteAttachmentReceipt(
       encoding: 'url'
     }
   };
+}
+
+function runCli(
+  cli: string,
+  args: readonly string[]
+): Promise<{ readonly status: number | null; readonly stdout: string; readonly stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, ...args]);
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+    child.once('error', reject);
+    child.once('close', (status) => resolve({ status, stdout, stderr }));
+  });
 }

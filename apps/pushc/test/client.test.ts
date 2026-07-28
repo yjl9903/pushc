@@ -69,7 +69,11 @@ describe('makePushRuntime', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/from-env",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
         "url": "https://example.com/from-env",
       }
     `);
@@ -82,7 +86,11 @@ describe('makePushRuntime', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/from-env",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
       }
     `);
     expect(qq).toBeInstanceOf(NapCatAdapter);
@@ -123,7 +131,11 @@ describe('makePushRuntime', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
       }
     `);
   });
@@ -152,7 +164,11 @@ describe('makePushRuntime', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/ops",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
       }
     `);
     await client.destroy();

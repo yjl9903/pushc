@@ -735,7 +735,7 @@ pnpm build
 - 为 URL、query、header 和 body template 设计显式 encoding/filter 语法。
 - 增加 form-urlencoded、multipart 和其他 serializer；需要时再设计非 UTF-8 转码。
 - 支持复杂 param、嵌套对象或从 JSON 文件读取扩展参数。
-- 支持可配置成功 status、JSON response 断言和 receipt 提取。
+- 支持 receipt 字段提取；成功 status 和 JSON/header response 断言已由后续实现完成。
 - 设计 retry policy、可重试状态、退避、幂等与取消语义。
 - 重新设计 CLI text/JSON output、receipt 和错误输出格式。
 - 系统化处理 URL path/query、Authorization header、body token 和 error chain 脱敏。

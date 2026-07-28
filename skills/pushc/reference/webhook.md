@@ -31,6 +31,15 @@ title = "{{title:-pushc}}"
 group = "{{param.group:-deployments}}"
 source = "pushc"
 
+[adapters.deploy.response]
+status = "2xx"
+
+[adapters.deploy.response.body]
+"/accepted" = { equals = true }
+
+[adapters.deploy.response.headers]
+x-request-id = { exists = true }
+
 [adapters.deploy.targets.release.request]
 url = "${DEPLOY_WEBHOOK_URL}/release"
 
@@ -43,8 +52,8 @@ The top-level adapter fields are:
 - `url` (required): a static absolute HTTP or HTTPS URL without credentials or templates. It defines
   the trusted origin for every request URL.
 - `request`: optional request configuration.
-- `response`: optional empty table reserved for future response parsing. Any field inside it is
-  rejected.
+- `response`: optional success policy with `status`, JSON `body` assertions, and sanitized
+  `headers` assertions.
 
 The adapter and each named target accept the following `request` fields:
 
@@ -58,10 +67,17 @@ The adapter and each named target accept the following `request` fields:
 - `timeout_ms`: integer from `1` through `2147483647`, default `10000`.
 - `body`: optional JSON-compatible TOML value or string. There is no default body.
 
-A target may contain only `request` and an empty `response` placeholder. Target request scalars
+A target may contain only `request` and `response`. Target request scalars
 override adapter values. Headers merge by case-insensitive name, with the target value winning.
 Plain JSON object bodies merge at the top level; every other target body replaces the inherited
 body.
+
+`response.status` accepts `"2xx"` (the default), one HTTP status, or a non-empty array of statuses.
+`response.body` maps RFC 6901 JSON Pointers to strict `{ equals = ... }` or
+`{ exists = boolean }` rules. `response.headers` maps case-insensitive header names to the same
+operations, with string-only equality. All rules must pass. Target response fields inherit
+independently; an explicitly configured body or headers table replaces that entire group, and an
+empty table clears it.
 
 For an adapter with no named targets, configure the request on the adapter and send to the adapter
 name, such as `deploy`. Defining a single named target does not make it the default.
@@ -106,15 +122,18 @@ data.
 `--dry-run` renders and validates the complete request without calling the endpoint. Its receipt
 contains the prepared request and no response. A successful dry run confirms local preparation only.
 
-A real send performs one HTTP request. HTTP status 200 through 299 is successful. The adapter does
-not retry.
+A real send performs one HTTP request. HTTP status 200 through 299 is successful by default; an
+explicit response status policy replaces that matcher. The adapter then checks body rules followed
+by header rules. It does not retry.
 
 The receipt request contains the final URL, method, normalized headers, content type, timeout, and
 rendered body. CLI output redacts configuration-derived secrets. The response receipt contains the
-status, sanitized headers, and a best-effort parsed JSON body. Summaries identify the HTTP method,
-destination host, and status.
+status, sanitized headers, and a best-effort parsed JSON body. Body rules can only inspect that
+parsed JSON; header rules can only inspect the sanitized headers. Summaries identify the HTTP
+method, destination host, and status.
 
-Non-2xx responses, timeouts, cancellation, and network errors return a failed send with every
-available receipt field. Request validation and adapter configuration failures use `INVALID_CONFIG`;
-HTTP request failures surface through `SEND_FAILED`. Do not retry automatically because an
-ambiguous network failure may have reached the endpoint.
+Status mismatches, assertion failures, timeouts, cancellation, and network errors return a failed
+send with every available receipt field. Assertion errors identify only the configured body path or
+header name, not response values. Request validation and adapter configuration failures use
+`INVALID_CONFIG`; HTTP request failures surface through `SEND_FAILED`. Do not retry automatically
+because an ambiguous network failure may have reached the endpoint.

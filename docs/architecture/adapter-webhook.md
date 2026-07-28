@@ -13,8 +13,7 @@ adapter 顶层只接受：
 - `url`：必填静态绝对 HTTP(S) URL。初始化时标准化，禁止 credentials 与 `{{`，并保存
   static origin。
 - `request`：可选 HTTP request 配置 table。
-- `response`：可选空 table，为后续 response parser 预留；本阶段不执行任何行为，非空即
-  `INVALID_CONFIG`。
+- `response`：可选 response success policy，包含 `status`、`body` 和 `headers`。
 
 adapter 与 target 的 `request` 使用相同的 snake_case 字段；target 顶层只接受
 `request`/`response` partial：
@@ -35,6 +34,22 @@ target request 标量整体覆盖。headers 在每层先按 lowercase name 校�
 其他情况 target body 整体替换。`body: null` 是显式合法 body。resolved target 是新建的
 `{ request, response }` 只读配置对象；headers 使用普通 object copy。发送时的模板渲染会
 从 resolved body 建立独立 JSON tree，不修改配置对象。
+
+response 配置字段为：
+
+| response 字段 | 默认值  | 规则                                                                    |
+| ------------- | ------- | ----------------------------------------------------------------------- |
+| `status`      | `"2xx"` | `"2xx"`、`100..599` 的单个整数或无重复的非空整数 array                  |
+| `body`        | 空      | JSON Pointer 到 `{ equals = JSON value }` 或 `{ exists = boolean }`     |
+| `headers`     | 空      | HTTP header name 到 `{ equals = string }` 或 `{ exists = boolean }`     |
+
+body path 使用 RFC 6901 JSON Pointer；空 path 指向整个 parsed JSON body。header name
+大小写不敏感并规范化为 lowercase。assertion object 为 strict object，且必须恰好包含一个
+operation。所有 assertions 为 AND。
+
+target 的 response `status`、`body`、`headers` 分别继承 adapter；显式字段整体替换对应值，
+因此空 body/headers table 可以清除继承规则。旧的空 response table 等价于继承默认
+`"2xx"` 和两组空规则。
 
 JSON body 只校验为类型定义描述的 JSON-shaped value，其中 object 必须是普通 object 或
 null-prototype object；不额外深拷贝。TOML datetime 是 parser 标量而非 JSON object，
@@ -75,19 +90,27 @@ scanner 从左到右只扫描一次，replacement 与 fallback 不递归。非�
 8. `WebhookRequest` 携带 resolved `timeout_ms`；`dispatchRequest` 通过标准
    `AbortSignal.timeout()` 与 `AbortSignal.any()` 组合 timeout 和 parent signal，再调用 Fetch。
 
-preparation 返回同一个规范化 request 作为 `receiptRequest` 与 `transportRequest`。
-`send(..., { dryRun: true })` 只执行本地 preparation，返回只含最终 request 的 receipt，不创建
-timeout 或调用 Fetch。正常 send 将 prepared request 传给 `dispatchRequest`，因此 dry run 与
-receipt request 不维护重复转换逻辑。Webhook 不支持 attachment nodes，统一返回
-`INVALID_MESSAGE`，不静默忽略或隐式生成 multipart。
+preparation 将规范化 request 作为 `receiptRequest`，并建立只供 dispatch 使用的
+`WebhookDispatchPlan { request, responsePolicy }`。`send(..., { dryRun: true })` 只执行本地
+preparation，返回只含最终 request 的 receipt，不创建 timeout 或调用 Fetch。正常 send 将
+dispatch plan 传给 `dispatchRequest`，因此 dry run 与 receipt request 不维护重复转换逻辑。
+Webhook 不支持 attachment nodes，统一返回 `INVALID_MESSAGE`，不静默忽略或隐式生成
+multipart。
 
-Webhook 以 `response.ok`（HTTP 200–299）判断成功，不增加 retry。dispatch 返回 response、
-summary 或 error，由 core 统一组装 receipt。receipt request
+Webhook 默认以 `response.ok`（HTTP 200–299）判断成功；显式 status 配置替换默认 status
+matcher。读取 response receipt 后依次判断 status、body assertions 和 header assertions，
+不增加 retry。dispatch 返回 response、summary 或 error，由 core 统一组装 receipt。receipt request
 记录最终 URL、method、经 `Headers` 规范化后的 headers、content type、timeout 和渲染后的
 body；Fetch 使用同一份规范化 header record，JSON body 保留序列化前的 `JsonValue`，实际
 Fetch body 从同一值生成。response 记录 status、过滤常见鉴权字段后的 headers，并 best-effort
-解析 JSON body。成功 summary 记录 method、最终 URL 的 host 和 HTTP status。非 2xx、
-timeout、取消和 transport error 在请求形成后返回包含 receipt 的失败 result。
+解析 JSON body。body assertions 只访问 parsed JSON own properties，并支持规范 array index；
+JSON object 深比较不依赖 key 顺序，array 严格比较顺序和长度。空、纯文本或非法 JSON
+response 没有 body。header assertions 只访问 receipt 中过滤后的 lowercase string headers。
+
+成功 summary 记录 method、最终 URL 的 host 和 HTTP status。status mismatch、assertion
+failure、timeout、取消和 transport error 在请求形成后返回包含 receipt 的失败 result。
+assertion failure 使用 `SEND_FAILED`，只报告失败 body path 或 header name，不包含实际值或
+期望值。dry run 验证 response 配置但不执行 assertions。
 
 ## 错误边界
 
@@ -100,5 +123,5 @@ transport、HTTP 和 abort 错误转换为统一失败 result，不做配置错�
 
 测试覆盖配置默认矩阵、target merge、JSON normalization、core renderer 集成、URL origin、
 Content-Type/serializer、method/body、timeout/abort、并发请求隔离、错误映射、渲染后多个
-text node 拼接、attachment 明确拒绝、严格空 response 占位、dry run 无 Fetch、response
-receipt。
+text node 拼接、attachment 明确拒绝、response config/target merge、status/body/header
+assertions、dry run 无 Fetch、response receipt。

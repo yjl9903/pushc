@@ -27,6 +27,11 @@ const adapter = new WebhookAdapter({
       group: '{{param.group:-pushc}}',
       level: 'active'
     }
+  },
+  response: {
+    body: {
+      '/code': { equals: 200 }
+    }
   }
 });
 

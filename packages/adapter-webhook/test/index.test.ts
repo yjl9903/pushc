@@ -26,7 +26,11 @@ describe('webhook configuration and targets', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/hook",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
         "url": "https://example.com/hook",
       }
     `);
@@ -38,7 +42,11 @@ describe('webhook configuration and targets', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/hook",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
       }
     `);
     await expect(adapter.send(undefined, { content: 'hello' })).resolves.toMatchInlineSnapshot(`
@@ -81,7 +89,11 @@ describe('webhook configuration and targets', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
       }
     `);
   });
@@ -121,7 +133,11 @@ describe('webhook configuration and targets', () => {
           "timeout_ms": 10000,
           "url": "https://example.com/",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
       }
     `);
     expect(
@@ -163,12 +179,56 @@ describe('webhook configuration and targets', () => {
     `);
   });
 
-  it('keeps response as a strict empty placeholder', () => {
+  it('normalizes response defaults and inherits response fields independently', () => {
+    const responseStatuses = [200, 202];
     const adapter = new WebhookAdapter({
       url: 'https://example.com',
-      response: {}
+      response: {
+        status: responseStatuses,
+        body: {
+          '/code': { equals: 200 },
+          '/data/id': { exists: true }
+        },
+        headers: {
+          'X-Request-ID': { exists: true }
+        }
+      }
     });
-    expect(adapter.parseTarget({ response: {} }).response).toMatchInlineSnapshot(`{}`);
+    responseStatuses.push(500);
+    expect(adapter.config.response).toEqual({
+      status: [200, 202],
+      body: {
+        '/code': { equals: 200 },
+        '/data/id': { exists: true }
+      },
+      headers: {
+        'x-request-id': { exists: true }
+      }
+    });
+    expect(
+      adapter.parseTarget({
+        response: {
+          status: 204,
+          body: {},
+          headers: { 'X-Target': { equals: 'yes' } }
+        }
+      }).response
+    ).toEqual({
+      status: [204],
+      body: {},
+      headers: { 'x-target': { equals: 'yes' } }
+    });
+    expect(
+      adapter.parseTarget({
+        response: {
+          body: { '': { exists: true } }
+        }
+      }).response
+    ).toEqual({
+      status: [200, 202],
+      body: { '': { exists: true } },
+      headers: { 'x-request-id': { exists: true } }
+    });
     expect(captureError(() => adapter.parseTarget({ response: { parser: 'json' } })))
       .toMatchInlineSnapshot(`
       {
@@ -182,6 +242,33 @@ describe('webhook configuration and targets', () => {
         "code": "INVALID_CONFIG",
         "message": "Invalid webhook configuration.",
         "name": "PushError",
+      }
+    `);
+  });
+
+  it.each([
+    { status: '3xx' },
+    { status: [] },
+    { status: [200, 200] },
+    { status: 99 },
+    { status: 600 },
+    { body: { code: { equals: 200 } } },
+    { body: { '/code~': { equals: 200 } } },
+    { body: { '/code': 200 } },
+    { body: { '/code': {} } },
+    { body: { '/code': { equals: 200, exists: true } } },
+    { body: { '/code': { equals: undefined } } },
+    { headers: { 'bad header': { exists: true } } },
+    { headers: { 'X-ID': { exists: true }, 'x-id': { exists: true } } },
+    { headers: { 'x-id': { equals: 1 } } },
+    { headers: { 'x-id': { matches: 'value' } } }
+  ])('rejects invalid response config %#', (response) => {
+    expect(captureError(() => parseWebhookConfig({ url: 'https://example.com', response })))
+      .toMatchInlineSnapshot(`
+      {
+        "code": "INVALID_CONFIG",
+        "message": "Invalid webhook configuration.",
+        "name": "WebhookError",
       }
     `);
   });
@@ -228,7 +315,11 @@ describe('webhook configuration and targets', () => {
           "timeout_ms": 2147483647,
           "url": "https://example.com/hook",
         },
-        "response": {},
+        "response": {
+          "body": {},
+          "headers": {},
+          "status": "2xx",
+        },
         "url": "https://example.com/hook",
       }
     `);
@@ -615,6 +706,144 @@ describe('webhook errors and lifecycle', () => {
         )
       }
     );
+    await expect(adapter.send(undefined, { content: 'ok' })).resolves.toMatchObject({
+      success: false,
+      receipt: { response: { status: 503 } },
+      error: { code: 'SEND_FAILED', message: 'Webhook returned HTTP 503.' }
+    });
+  });
+
+  it('supports configured status, JSON Pointer body rules and header rules', async () => {
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com',
+        response: {
+          status: [202, 503],
+          body: {
+            '': {
+              equals: {
+                code: 200,
+                data: {
+                  'message/id': 'accepted',
+                  items: [{ value: null }]
+                }
+              }
+            },
+            '/data/message~1id': { equals: 'accepted' },
+            '/data/items/0/value': { exists: true },
+            '/data/missing': { exists: false }
+          },
+          headers: {
+            'X-Request-ID': { equals: 'request-1' },
+            'X-Optional': { exists: false }
+          }
+        }
+      },
+      {
+        fetch: vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                data: {
+                  items: [{ value: null }],
+                  'message/id': 'accepted'
+                },
+                code: 200
+              }),
+              {
+                status: 503,
+                headers: {
+                  'content-type': 'application/json',
+                  'x-request-id': 'request-1'
+                }
+              }
+            )
+        )
+      }
+    );
+
+    await expect(adapter.send(undefined, { content: 'ok' })).resolves.toMatchObject({
+      success: true,
+      receipt: {
+        response: {
+          status: 503,
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': 'request-1'
+          }
+        },
+        summary: 'Webhook POST to example.com completed with HTTP 503.'
+      }
+    });
+  });
+
+  it.each([
+    {
+      name: 'missing JSON body',
+      response: new Response('not json', { status: 200 }),
+      config: { body: { '': { exists: true } } },
+      message: 'Webhook response body assertion failed at "".'
+    },
+    {
+      name: 'mismatched JSON value',
+      response: new Response('{"code":500}', { status: 200 }),
+      config: { body: { '/code': { equals: 200 } } },
+      message: 'Webhook response body assertion failed at "/code".'
+    },
+    {
+      name: 'filtered header',
+      response: new Response('{}', {
+        status: 200,
+        headers: { 'www-authenticate': 'secret' }
+      }),
+      config: { headers: { 'www-authenticate': { exists: true } } },
+      message: 'Webhook response header assertion failed for "www-authenticate".'
+    },
+    {
+      name: 'mismatched header',
+      response: new Response('{}', {
+        status: 200,
+        headers: { 'x-result': 'failed' }
+      }),
+      config: { headers: { 'x-result': { equals: 'accepted' } } },
+      message: 'Webhook response header assertion failed for "x-result".'
+    }
+  ])('returns sanitized assertion failures for $name', async ({ response, config, message }) => {
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com',
+        response: config
+      },
+      { fetch: vi.fn(async () => response) }
+    );
+
+    await expect(adapter.send(undefined, { content: 'ok' })).resolves.toMatchObject({
+      success: false,
+      receipt: { response: { status: 200 } },
+      error: { code: 'SEND_FAILED', message }
+    });
+  });
+
+  it('checks status before body and header rules', async () => {
+    const adapter = new WebhookAdapter(
+      {
+        url: 'https://example.com',
+        response: {
+          body: { '/code': { equals: 200 } },
+          headers: { 'x-result': { equals: 'accepted' } }
+        }
+      },
+      {
+        fetch: vi.fn(
+          async () =>
+            new Response('{"code":500}', {
+              status: 503,
+              headers: { 'x-result': 'failed' }
+            })
+        )
+      }
+    );
+
     await expect(adapter.send(undefined, { content: 'ok' })).resolves.toMatchObject({
       success: false,
       receipt: { response: { status: 503 } },

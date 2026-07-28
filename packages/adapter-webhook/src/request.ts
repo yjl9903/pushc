@@ -12,9 +12,16 @@ import type {
   JsonValue,
   WebhookRequestConfig,
   WebhookRequestReceipt,
+  WebhookResponseConfig,
   WebhookResponseReceipt
 } from './types.js';
 import { isJsonValue } from './utils/json.js';
+import { getWebhookResponseFailure } from './response.js';
+
+export interface WebhookDispatchPlan {
+  readonly request: WebhookRequestReceipt;
+  readonly responsePolicy: WebhookResponseConfig;
+}
 
 const FILTERED_RESPONSE_HEADERS = new Set([
   'set-cookie',
@@ -74,9 +81,10 @@ export function buildWebhookRequest(
 
 export async function sendWebhook(
   fetch: typeof globalThis.fetch,
-  request: WebhookRequestReceipt,
+  plan: WebhookDispatchPlan,
   options: PushAdapterOperationOptions
 ): Promise<PushDispatchResult<never, WebhookResponseReceipt>> {
+  const { request, responsePolicy } = plan;
   const timeoutSignal = AbortSignal.timeout(request.timeout_ms);
   const signal =
     options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
@@ -99,16 +107,16 @@ export async function sendWebhook(
     });
 
     const responseReceipt = await readResponse(response);
+    const responseFailure = getWebhookResponseFailure(responsePolicy, responseReceipt);
 
-    if (!response.ok) {
-      return failure(`Webhook returned HTTP ${response.status}.`, responseReceipt);
-    } else {
-      return {
-        success: true,
-        summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
-        response: responseReceipt
-      };
+    if (responseFailure !== undefined) {
+      return failure(responseFailure, responseReceipt);
     }
+    return {
+      success: true,
+      summary: `Webhook ${request.method} to ${new URL(request.url).host} completed with HTTP ${response.status}.`,
+      response: responseReceipt
+    };
   } catch (error) {
     if (signal.aborted) {
       return failure(
@@ -116,9 +124,8 @@ export async function sendWebhook(
           ? `Webhook request timed out after ${request.timeout_ms}ms.`
           : 'Webhook request was aborted.'
       );
-    } else {
-      return failure(error instanceof WebhookError ? error.message : 'Webhook request failed.');
     }
+    return failure(error instanceof WebhookError ? error.message : 'Webhook request failed.');
   }
 }
 

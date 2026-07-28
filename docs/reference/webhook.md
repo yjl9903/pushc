@@ -9,7 +9,7 @@
 - **扩展字段**：服务支持但基础推送不需要的通知样式、优先级、动作和生命周期字段。
 - **请求字段名**：均为上游服务的原始字段名，pushc 不重命名或统一其语义。
 
-上游接口可能发生变化。以下内容最后核对于 2026-07-22，配置前应同时参考各服务的官方文档。
+上游接口可能发生变化。以下内容最后核对于 2026-07-29，配置前应同时参考各服务的官方文档。
 
 ## 通用 adapter 配置形态
 
@@ -24,7 +24,9 @@
 | `request.content_type` | 使用标准 media type 选择请求体编码，如 `application/json` 或 `text/plain`。   |
 | `request.body`         | 保留服务原始字段，并在任意字符串值中插入 `{{message}}`。                      |
 | `request.timeout_ms`   | 限制请求等待时间。                                                            |
-| `response`             | 空配置占位；receipt 始终记录 status、过滤后的 headers，并尽力解析 JSON body。 |
+| `response.status`      | 配置成功 HTTP status；默认接受 200–299。                                    |
+| `response.body`        | 使用 JSON Pointer 配置 JSON response body 成功断言。                         |
+| `response.headers`     | 使用 header name 配置过滤后 response header 成功断言。                       |
 
 `config.toml` 是允许 agent 阅读的明文，不得包含任何真实秘密。Token、key、password 和
 其他 credential 必须放在配置文件旁的 `.env` 或进程环境中，`config.toml` 只通过
@@ -36,6 +38,27 @@ title/param 模板渲染后的全部 text node 按顺序无分隔符连接。`re
 结构化消息可以提供 param；同时传入 CLI param 时，同名 key 以 CLI 为准。
 本文配置示例按照 [Webhook adapter 优化计划](../plan/260722-webhook-optimization.md)中的预期
 配置形态描述。
+
+response assertion 必须显式使用 `{ equals = ... }` 或 `{ exists = ... }`，同一规则不能同时
+使用两个 operation。`response.body` 的 key 是 RFC 6901 JSON Pointer；空 key 指向整个 JSON
+body。`response.headers` 的 key 是大小写不敏感的 HTTP header name。所有规则为 AND。
+
+```toml
+[adapters.example.response]
+status = "2xx"
+
+[adapters.example.response.body]
+"/code" = { equals = 200 }
+"/data/id" = { exists = true }
+
+[adapters.example.response.headers]
+x-request-id = { exists = true }
+```
+
+`status` 也可以是单个 status（如 `202`）或无重复的非空 status array（如
+`[200, 202]`）。body 只有在 response 成功解析为 JSON 时存在；纯文本、空或非法 JSON
+response 不能通过 body equality assertion。headers assertions 只访问 receipt 中已经过滤
+并规范化的 headers。
 
 ## 能力总览
 
@@ -123,6 +146,9 @@ body = "{{message}}"
 title = "{{title:-pushc}}"
 group = "pushc"
 level = "active"
+
+[adapters.bark.response.body]
+"/code" = { equals = 200 }
 ```
 
 官方资料：[Bark API tutorial](https://github.com/Finb/Bark/blob/master/docs/en-us/tutorial.md)
@@ -219,6 +245,10 @@ message = "{{message}}"
 title = "{{title:-pushc}}"
 priority = 4
 tags = ["white_check_mark"]
+
+[adapters.ntfy.response.body]
+"/event" = { equals = "message" }
+"/id" = { exists = true }
 ```
 
 不需要认证时应删除 `Authorization`。官方资料：
@@ -295,6 +325,9 @@ contentType = "text/plain"
 
 [adapters.gotify.request.body.extras."client::notification".click]
 url = "https://example.com/status"
+
+[adapters.gotify.response.body]
+"/id" = { exists = true }
 ```
 
 官方资料：[Gotify push messages](https://gotify.net/docs/pushmsg)、
@@ -374,6 +407,9 @@ user = "${PUSHOVER_USER_KEY}"
 message = "{{message}}"
 title = "{{title:-pushc}}"
 priority = 0
+
+[adapters.pushover.response.body]
+"/status" = { equals = 1 }
 ```
 
 紧急通知可以配置为另一个 adapter 实例，避免普通消息意外继承紧急语义：

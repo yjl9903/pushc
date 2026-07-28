@@ -16,14 +16,15 @@ import type {
 } from './types.js';
 
 import { WebhookError } from './error.js';
-import { buildWebhookRequest, sendWebhook } from './request.js';
+import { buildWebhookRequest, sendWebhook, type WebhookDispatchPlan } from './request.js';
 import { parseWebhookConfig, parseWebhookTargetPartial, resolveWebhookTarget } from './config.js';
 
 export class WebhookAdapter extends PushAdapter<
   WebhookConfig,
   WebhookTargetConfig,
   WebhookRequestReceipt,
-  WebhookResponseReceipt
+  WebhookResponseReceipt,
+  WebhookDispatchPlan
 > {
   readonly #fetch: typeof globalThis.fetch;
   readonly #origin: string;
@@ -50,14 +51,17 @@ export class WebhookAdapter extends PushAdapter<
     target: WebhookTargetConfig,
     payload: NormalizedPushPayload,
     _options: PushAdapterOperationOptions
-  ): Promise<PushPreparedRequest<WebhookRequestReceipt, WebhookRequestReceipt>> {
+  ): Promise<PushPreparedRequest<WebhookRequestReceipt, WebhookDispatchPlan>> {
     try {
       if (payload.content.some((item) => item.type === 'attachment')) {
         throw new PushError('INVALID_MESSAGE', 'Webhook does not support attachments.');
       }
 
       const request = buildWebhookRequest(target.request, this.#origin, payload);
-      return { receiptRequest: request, transportRequest: request };
+      return {
+        receiptRequest: request,
+        transportRequest: { request, responsePolicy: target.response }
+      };
     } catch (error) {
       if (error instanceof WebhookError) {
         throw new PushError('INVALID_CONFIG', error.message, { cause: error });
@@ -68,7 +72,7 @@ export class WebhookAdapter extends PushAdapter<
   }
 
   protected dispatchRequest(
-    prepared: PushPreparedRequest<WebhookRequestReceipt, WebhookRequestReceipt>,
+    prepared: PushPreparedRequest<WebhookRequestReceipt, WebhookDispatchPlan>,
     options: PushAdapterOperationOptions
   ): Promise<PushDispatchResult<never, WebhookResponseReceipt>> {
     return sendWebhook(this.#fetch, prepared.transportRequest, options);

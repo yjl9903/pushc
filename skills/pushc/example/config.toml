@@ -21,7 +21,8 @@ title = "{{title:-pushc}}"
 group = "{{param.group:-pushc}}"
 level = "active"
 
-[adapters.bark.response]
+[adapters.bark.response.body]
+"/code" = { equals = 200 }
 
 # -----------------------------------------------------------------------------
 # ntfy
@@ -43,7 +44,9 @@ title = "{{title:-pushc}}"
 priority = 4
 tags = ["white_check_mark"]
 
-[adapters.ntfy.response]
+[adapters.ntfy.response.body]
+"/id" = { exists = true }
+"/event" = { equals = "message" }
 
 # -----------------------------------------------------------------------------
 # Gotify
@@ -66,7 +69,8 @@ priority = 5
 [adapters.gotify.request.body.extras."client::display"]
 contentType = "text/plain"
 
-[adapters.gotify.response]
+[adapters.gotify.response.body]
+"/id" = { exists = true }
 
 # -----------------------------------------------------------------------------
 # Pushover
@@ -87,15 +91,14 @@ message = "{{message}}"
 title = "{{title:-pushc}}"
 priority = 0
 
-[adapters.pushover.response]
+[adapters.pushover.response.body]
+"/status" = { equals = 1 }
 
 [adapters.pushover.targets.emergency.request.body] # Inherits the default Pushover request above.
 title = "{{title:-pushc emergency}}"
 priority = 2
 retry = 60
 expire = 1800
-
-[adapters.pushover.targets.emergency.response]
 
 # -----------------------------------------------------------------------------
 # NapCat

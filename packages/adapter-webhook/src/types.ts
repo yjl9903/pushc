@@ -12,7 +12,17 @@ export interface WebhookRequestConfig {
   readonly body?: JsonValue;
 }
 
-export type WebhookResponseConfig = Readonly<Record<string, never>>;
+export type WebhookResponseStatus = '2xx' | readonly number[];
+
+export type WebhookBodyAssertion = { readonly equals: JsonValue } | { readonly exists: boolean };
+
+export type WebhookHeaderAssertion = { readonly equals: string } | { readonly exists: boolean };
+
+export interface WebhookResponseConfig {
+  readonly status: WebhookResponseStatus;
+  readonly body: Readonly<Record<string, WebhookBodyAssertion>>;
+  readonly headers: Readonly<Record<string, WebhookHeaderAssertion>>;
+}
 
 export interface WebhookConfig {
   readonly url: string;
