@@ -4,7 +4,7 @@
 [![version](https://img.shields.io/npm/v/pushc?label=pushc)](https://www.npmjs.com/package/pushc)
 [![CI](https://github.com/yjl9903/pushc/actions/workflows/ci.yml/badge.svg)](https://github.com/yjl9903/pushc/actions/workflows/ci.yml)
 
-Pushing any messages to anywhere, an agent-friendly CLI for pushing messages.
+Pushing any Messages to anywhere from Your Agent, an agent-friendly CLI for pushing messages.
 
 Now pushc supports adapters:
 
