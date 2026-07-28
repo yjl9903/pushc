@@ -13,10 +13,16 @@ Now pushc supports adapters:
 
 ## Install
 
-Copy this to your agent:
+Copy this to your agent.
 
 ```text
 Install pushc skill from https://github.com/yjl9903/pushc
+```
+
+Or use skills CLI.
+
+```bash
+npx skills add https://github.com/yjl9903/pushc
 ```
 
 Or install pushc CLI manually.
