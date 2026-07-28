@@ -7,14 +7,26 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import packageJson from '../package.json' with { type: 'json' };
+
 describe('built CLI', () => {
   it('is executable by Node and reports its version', () => {
     const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
     const result = spawnSync(process.execPath, [cli, '--version'], { encoding: 'utf8' });
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('0.0.0');
-    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain(packageJson.version);
+    expect({
+      status: result.status,
+      stdout: result.stdout.replace(packageJson.version, '<version>'),
+      stderr: result.stderr
+    }).toMatchInlineSnapshot(`
+      {
+        "status": 0,
+        "stderr": "",
+        "stdout": "pushc/<version>
+      ",
+      }
+    `);
   });
 
   it('writes errors and sets the process exit code directly', () => {
