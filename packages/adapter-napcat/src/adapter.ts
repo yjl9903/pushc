@@ -61,7 +61,9 @@ export class NapCatAdapter extends PushAdapter<
     prepared: PreparedNapCatRequest,
     options: PushAdapterOperationOptions
   ): Promise<PushDispatchResult<NapCatRequestReceipt, NapCatResponseReceipt>> {
-    const timeoutSignal = AbortSignal.timeout(this.config.timeout_ms);
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), this.config.timeout_ms);
+    const timeoutSignal = timeoutController.signal;
     const operationSignal = AbortSignal.any([
       ...(options.signal ? [options.signal] : []),
       this.#connection.destroySignal,
@@ -111,6 +113,8 @@ export class NapCatAdapter extends PushAdapter<
                 : napCatFailureMessage(error)
         }
       };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

@@ -91,8 +91,11 @@ adapter 惰性维护单个 WebSocket client：constructor 不连接，第一次�
 并建立连接；并发的首次发送共享同一连接 Promise，后续发送复用已连接 client，直到
 `destroy` 断开并终止 adapter。
 
-1. 使用原生 `AbortSignal.timeout()` 创建覆盖远程 MIME 探测、lazy connect 和 send 的操作级
-   timeout，并通过 `AbortSignal.any()` 与调用方 signal、adapter destroy signal 组合。
+1. 使用显式 `AbortController` 和保持 Node 进程存活的 timer 创建覆盖远程 MIME 探测、
+   lazy connect 和 send 的操作级 timeout，并通过 `AbortSignal.any()` 与调用方 signal、
+   adapter destroy signal 组合；操作结束后立即清理 timer。不能使用不保持事件循环存活的
+   `AbortSignal.timeout()`，否则底层连接 Promise 在 socket 关闭后仍未 settled 时，CLI 会
+   以 unsettled top-level await 提前退出。
 2. 以可注入 Fetch 对未显式提供 `mediaType` 的远程附件发送 HEAD，默认并发上限为 8；
    合法响应 `Content-Type` 优先于 pathname 推断，非成功响应、无效 header 或普通网络失败
    降级使用初始类型。
@@ -103,8 +106,8 @@ adapter 惰性维护单个 WebSocket client：constructor 不连接，第一次�
 6. 成功 dispatch result 返回 response、summary 与最终 receipt request；core 组合 receipt。
    连接、发送、超时和取消返回失败 result；标准 Error 或 NapCat SDK failure object 的非空
    string `message` 被保留，其他异常使用稳定回退描述。
-7. Promise 竞争结束后释放取消监听；原生组合 signal 管理父 signal 与 timeout，连接保留给
-   后续发送。
+7. Promise 竞争结束后释放取消监听并清理 timeout timer；组合 signal 管理父 signal 与
+   timeout，连接保留给后续发送。
 
 `destroy` 幂等地取消进行中的等待并断开共享 client；断开连接失败由 lifecycle 调用方处理。连接建立失败会清除缓存，使后续发送可以重试。
 
@@ -119,4 +122,6 @@ base path、attachment-only、MIME segment 映射、Base64 与 HTTP(S) URL
 transport、包含冒号的相对路径、安全远程 basename、control character 拒绝、公开 receipt
 脱敏、大小限制、dry run 不下载且无连接、SDK failure、失败清理、远程 Content-Type 类型
 修正与并行探测、调用方取消和超时。
-测试不得依赖真实 NapCat 服务。tsdown 以 Node 平台输出 ESM 与类型声明。
+CLI smoke test 还必须在独立 Node 子进程中覆盖连接关闭后的 timeout，防止测试运行器自身的
+活动句柄掩盖 unsettled top-level await。测试不得依赖真实 NapCat 服务。tsdown 以 Node
+平台输出 ESM 与类型声明。

@@ -149,6 +149,55 @@ describe('built CLI', () => {
     }
   });
 
+  it('reports a NapCat connection timeout without an unsettled top-level await', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pushc-napcat-timeout-'));
+    const config = join(root, 'config.toml');
+    await writeFile(
+      config,
+      [
+        '[adapters.qq]',
+        'type = "napcat"',
+        'base_url = "ws://127.0.0.1:1"',
+        'timeout_ms = 50',
+        '[adapters.qq.targets.me]',
+        'user_id = "123"'
+      ].join('\n')
+    );
+
+    try {
+      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [cli, 'send', 'test', '--target', 'qq:me', '--config', config, '--json'],
+        { encoding: 'utf8' }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).not.toContain('unsettled top-level await');
+      expect(JSON.parse(result.stderr)).toMatchObject({
+        success: false,
+        adapter: 'qq',
+        target: 'me',
+        receipt: {
+          request: {
+            method: 'send_msg',
+            params: {
+              user_id: 123,
+              message: [{ type: 'text', data: { text: 'test' } }]
+            }
+          }
+        },
+        error: {
+          code: 'SEND_FAILED',
+          message: 'NapCat operation timed out after 50ms.'
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('parses a structured message from piped JSON', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pushc-json-pipe-'));
     const config = join(root, 'config.toml');
