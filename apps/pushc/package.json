@@ -46,7 +46,7 @@
     "@pushc/adapter-napcat": "workspace:*",
     "@pushc/adapter-webhook": "workspace:*",
     "@pushc/core": "workspace:*",
-    "breadc": "1.0.0-beta.17",
+    "breadc": "1.0.0-beta.18",
     "dotenv": "17.4.2",
     "smol-toml": "1.7.1"
   },
