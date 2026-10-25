@@ -116,3 +116,18 @@ group_id = "${NAPCAT_GROUP_ID}" # Destination ID, not a credential; a literal va
 
 [adapters.qq.targets.friend]
 user_id = "${NAPCAT_USER_ID}" # Destination ID, not a credential; a literal value is allowed.
+
+# -----------------------------------------------------------------------------
+# Grok Bot Routine (HTTP 200 means triggered, not completed)
+# -----------------------------------------------------------------------------
+
+[adapters.grok]
+type = "grok-bot"
+url = "${GROK_BOT_WEBHOOK_URL}"
+key = "${GROK_BOT_WEBHOOK_KEY}"
+
+# Omit body for the default message/title/param mapping.
+[adapters.grok.body]
+task = "{{message}}"
+event = "{{param.event:-notification}}"
+metadata = { source = "pushc", priority = 1 }

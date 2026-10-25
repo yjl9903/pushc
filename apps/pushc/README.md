@@ -9,6 +9,7 @@ Pushing any Messages to anywhere from Your Agent, an agent-friendly CLI for push
 Now pushc supports adapters:
 
 - HTTP webhook
+- Grok Bot Routines
 - NapCat for QQ
 
 ## Install

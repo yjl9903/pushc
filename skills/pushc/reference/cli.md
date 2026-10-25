@@ -329,6 +329,7 @@ Configuration fields, attachment support, sending, output, and errors are define
 adapter:
 
 - [Webhook adapter](webhook.md)
+- [Grok Bot adapter](grok-bot.md)
 - [NapCat adapter](napcat.md)
 
 ## Configuration loading

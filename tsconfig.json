@@ -16,6 +16,9 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "paths": {
+      "@pushc/adapter-grok-bot": [
+        "./packages/adapter-grok-bot/src"
+      ],
       "@pushc/adapter-napcat": [
         "./packages/adapter-napcat/src"
       ],

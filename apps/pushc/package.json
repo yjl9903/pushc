@@ -43,6 +43,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pushc/adapter-grok-bot": "workspace:*",
     "@pushc/adapter-napcat": "workspace:*",
     "@pushc/adapter-webhook": "workspace:*",
     "@pushc/core": "workspace:*",

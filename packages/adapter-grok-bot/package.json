@@ -1,0 +1,45 @@
+{
+  "name": "@pushc/adapter-grok-bot",
+  "version": "0.1.0",
+  "description": "Grok Bot Routine webhook adapter for pushc",
+  "keywords": [
+    "pushc",
+    "pushc-adapter",
+    "grok-bot",
+    "webhook",
+    "notification"
+  ],
+  "homepage": "https://github.com/yjl9903/pushc#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjl9903/pushc.git",
+    "directory": "packages/adapter-grok-bot"
+  },
+  "license": "MIT",
+  "author": "OneKuma",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "test:ci": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pushc/adapter-webhook": "workspace:*",
+    "@pushc/core": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

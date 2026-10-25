@@ -23,6 +23,11 @@ app 层读取 TOML，以 Node 内置 `util.parseEnv` 解析相邻 `.env`，并�
 首次真实发送中惰性获取。`targets` 只解析配置并列出 destination；不构造 webhook request，也
 不建立 NapCat 连接或发送测试消息。
 
+官方组合层支持 `webhook`、`napcat` 和 `grok-bot`。Grok Bot 使用独立 workspace 的
+`GrokBotAdapter`；环境变量与脱敏沿用通用配置流程，不读取专属环境变量。Routine URL/key
+配对及同 origin 约束在注册 target 时验证；HTTP 200 只代表触发成功，见
+[Grok Bot 架构](./adapter-grok-bot.md)。
+
 ## 命令解析与帮助
 
 CLI 使用 `breadc 1.0.0-beta.23`。根 description 提供用途和入门示例；

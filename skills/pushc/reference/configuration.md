@@ -30,6 +30,7 @@ adapters.
 Read the reference matching the configured adapter before creating or changing its table:
 
 - [Webhook adapter](webhook.md)
+- [Grok Bot adapter](grok-bot.md)
 - [NapCat adapter](napcat.md)
 
 ## Protect credentials

@@ -3,9 +3,9 @@ import {
   WebhookAdapter,
   WebhookError,
   parseContentType,
-  parseWebhookConfig
+  parseWebhookConfig,
+  buildWebhookRequest
 } from '../src/index.js';
-import { buildWebhookRequest } from '../src/request.js';
 
 function okFetch() {
   return vi.fn<typeof globalThis.fetch>(

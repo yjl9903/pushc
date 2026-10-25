@@ -1,3 +1,4 @@
+import { GrokBotAdapter } from '@pushc/adapter-grok-bot';
 import { NapCatAdapter } from '@pushc/adapter-napcat';
 import { WebhookAdapter } from '@pushc/adapter-webhook';
 import { PushClient, PushError, type AnyPushAdapter } from '@pushc/core';
@@ -43,6 +44,10 @@ async function createPushClient(config: ReturnType<typeof parsePushConfig>): Pro
     let adapter: AnyPushAdapter | undefined;
     try {
       switch (definition.type) {
+        case 'grok-bot': {
+          adapter = new GrokBotAdapter(definition.options);
+          break;
+        }
         case 'webhook': {
           adapter = new WebhookAdapter(definition.options);
           break;

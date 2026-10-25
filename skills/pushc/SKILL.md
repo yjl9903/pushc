@@ -162,7 +162,7 @@ attachments appear in a precise sequence. Omit `param` when the message does not
 Use `{{title}}` and `{{param.key}}` in text and attachment string fields. Use
 `{{param.key:-fallback}}` when an empty or missing value needs a default. Substitutions run once;
 do not expect values containing another expression to be expanded recursively. `{{message}}` is
-reserved for Webhook request configuration and is not a message-content variable.
+reserved for Webhook and Grok Bot request configuration and is not a message-content variable.
 
 Write relative attachment paths relative to the directory containing the message file.
 
@@ -181,6 +181,7 @@ Read the reference matching the selected adapter before configuring it or relyin
 adapter-specific send behavior:
 
 - [Webhook adapter](reference/webhook.md)
+- [Grok Bot adapter](reference/grok-bot.md)
 - [NapCat adapter](reference/napcat.md)
 
 ## Operating rules

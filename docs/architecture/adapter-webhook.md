@@ -6,6 +6,14 @@
 Gotify 或 Pushover 的产品语义。它依赖 `@pushc/core` 与 Zod，使用标准 `fetch`、`Headers`、
 `URL` 和 `AbortSignal`，不依赖 Node API。测试或非标准运行时可以注入 fetch。
 
+## 公共传输复用接口
+
+package root 显式导出 `buildWebhookRequest`、`sendWebhook` 与 `WebhookDispatchPlan` type，
+供 Grok Bot 等 adapter 以函数组合复用。builder 接收已验证的 request config、adapter origin
+和 normalized payload；sender 接收 Fetch、dispatch plan 与 operation options。这些底层
+接口不代替 core 的公共发送边界，调用方仍须完成 payload/target 校验、附件处理和 receipt
+组装。通用 WebhookAdapter 的行为不变。
+
 ## 配置与 resolved target
 
 adapter 顶层只接受：

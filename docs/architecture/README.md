@@ -8,13 +8,14 @@ pushc 提供面向用户和自动化 Agent 的消息推送能力：调用方通�
 string array 或有序 text/attachment AST，以及可选标题与 string param Map。core 将所有输入
 归一化为唯一 AST。每个 adapter 实例保存可复用连接信息并
 管理自己的 targets；target 是 adapter-specific partial config。系统当前支持通用 HTTP
-Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件与 HTTP(S) 附件。
+Webhook、Grok Bot Routine 触发，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件与 HTTP(S) 附件。
 
 ## 子项目索引
 
 - [`apps/pushc`](./pushc-cli.md)：CLI、TOML 配置、消息输入、输出协议与官方 adapter 装配。
 - [`packages/core`](./core.md)：公共领域模型、adapter 契约、发送调度与错误归一化。
 - [`packages/adapter-webhook`](./adapter-webhook.md)：HTTP Webhook 配置、模板渲染、请求与取消语义。
+- [`packages/adapter-grok-bot`](./adapter-grok-bot.md)：Grok Bot Routine 配置、消息映射与触发语义。
 - [`packages/adapter-napcat`](./adapter-napcat.md)：NapCat QQ 配置、连接生命周期、收件人与取消语义。
 
 ## 模块边界
@@ -24,10 +25,13 @@ Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件
   统一错误包装。
 - [`packages/adapter-webhook`](./adapter-webhook.md)：基于标准 `fetch` 的运行时无关 adapter，
   支持完整 target 请求覆盖、JSON/文本 serializer、payload 模板、请求头和超时。
+- [`packages/adapter-grok-bot`](./adapter-grok-bot.md)：复用 webhook 请求构造与传输的运行时无关平台 adapter。
 - [`packages/adapter-napcat`](./adapter-napcat.md)：Node.js adapter，管理 NapCat WebSocket 连接、私聊/群聊收件人、超时和发送回执。
 - [`apps/pushc`](./pushc-cli.md)：Node.js CLI 与官方组合层；负责配置路径发现与标准化、异步配置加载、TOML 与环境变量、具体 adapter class 构造、消息输入、命令输出和退出码。
 
 依赖方向必须保持为 `apps/pushc -> adapters -> core`。`core` 不得依赖 adapter、Node API、TOML 解析器或平台 SDK。adapter 不负责配置文件发现或 CLI 展示。
+允许单向复用 `adapter-grok-bot -> adapter-webhook -> core`；Grok Bot 同时直接依赖 core，
+webhook 不依赖 Grok Bot。
 
 ## 核心数据流
 
