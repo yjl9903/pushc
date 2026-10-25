@@ -1,6 +1,6 @@
 {
   "name": "@pushc/adapter-grok-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Grok Bot Routine webhook adapter for pushc",
   "keywords": [
     "pushc",
