@@ -1,9 +1,11 @@
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { isDestinationName, PushError } from '@pushc/core';
-import { config as loadDotenv } from 'dotenv';
+import { parseEnv } from 'node:util';
+
 import { parse } from 'smol-toml';
+
+import { isDestinationName, PushError } from '@pushc/core';
 
 import { ConfigError } from './error.js';
 import { isNonEmptyString, isRecord } from './utils/value.js';
@@ -67,7 +69,7 @@ export async function findConfigPath(options: FindConfigPathOptions = {}): Promi
 
 export async function normalizeConfigPath(
   input: string,
-  cwd = process.cwd(),
+  cwd: string = process.cwd(),
   source = 'config path'
 ): Promise<string> {
   const candidate = resolve(cwd, input);
@@ -107,15 +109,14 @@ export async function loadConfig(options: LoadConfigOptions): Promise<LoadedConf
 
   const dotenvPath = join(dirname(path), '.env');
   if (await isFile(dotenvPath)) {
-    const dotenvResult = loadDotenv({
-      path: dotenvPath,
-      override: false,
-      quiet: true,
-      processEnv: env
-    });
-    if (dotenvResult.error) {
+    try {
+      const parsedEnv = parseEnv(await readFile(dotenvPath, 'utf8'));
+      for (const [name, value] of Object.entries(parsedEnv)) {
+        if (env[name] === undefined) env[name] = value;
+      }
+    } catch (error) {
       throw new ConfigError('CONFIG_READ_FAILED', `Could not read ${dotenvPath}.`, {
-        cause: dotenvResult.error
+        cause: error
       });
     }
   }

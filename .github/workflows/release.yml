@@ -18,17 +18,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.9
+      - name: Setup toolchain
+        uses: jdx/mise-action@v5.2.3
+        with:
+          cache: false
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 26.5.0
-          cache: pnpm
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build packages
         run: pnpm build

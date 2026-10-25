@@ -58,6 +58,15 @@ Webhook，以及通过 NapCat WebSocket 发送 QQ 私聊、群聊、本地文件
 - `dist/` 是构建产物，不作为设计或实现来源。
 - 综合评估改动量与影响范围较大的需求，才在 `docs/plan/` 记录背景、目标、关键设计决策和技术方案；同一上下文优先复用已有 plan。plan 不能代替本目录的现状描述。
 
+## 开发工具链
+
+`mise.toml` 固定开发与 CI 使用的 Node.js、pnpm 版本；根 `package.json` 的 `packageManager`
+与 mise 的 pnpm 版本保持一致。运行 `mise install` 安装工具，通过 `mise exec -- pnpm ...`
+执行命令。CI、发布和依赖同步工作流使用同一份 mise 配置；CI 与发布采用 frozen lockfile 安装。
+发布的 Node.js 包仍支持 Node.js 24+，开发工具链版本不改变运行时最低要求。
+TypeScript 开启 `isolatedDeclarations`，公共声明保持显式类型；tsdown 使用 Oxc 生成声明，
+类型检查由 TypeScript 执行。
+
 ## JavaScript 运行时输入边界
 
 公共 API 的运行时校验只面向 TypeScript 类型所描述的合理数据：object literal、JSON/TOML

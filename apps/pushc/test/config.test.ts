@@ -90,7 +90,7 @@ describe('config', () => {
     ).resolves.toBe(configPath);
   });
 
-  it('loads dotenv next to the config and expands environment variables', async () => {
+  it('loads .env next to the config and expands environment variables', async () => {
     const root = await tempDirectory();
     const configPath = join(root, 'config.toml');
     await writeFile(join(root, '.env'), 'WEBHOOK_URL=https://example.com/from-dotenv\n');
@@ -177,6 +177,52 @@ describe('config', () => {
       code: 'ENV_MISSING',
       message: 'Environment variable MISSING_SECRET is required by the config.'
     });
+  });
+
+  it('uses Node .env syntax and only populates the supplied environment', async () => {
+    const root = await tempDirectory();
+    const configPath = join(root, 'config.toml');
+    const key = 'PUSHC_TEST_NATIVE_ENV';
+    const original = process.env[key];
+    await writeFile(
+      join(root, '.env'),
+      [
+        '# Native .env syntax',
+        `export ${key} = "first line`,
+        'second line # literal"',
+        'EMPTY=',
+        "QUOTED = '  spaced # value  ' # comment",
+        'PLAIN = value # comment',
+        'LITERAL = ${PLAIN}'
+      ].join('\n')
+    );
+    await writeFile(configPath, 'value = "${PUSHC_TEST_NATIVE_ENV}"\n');
+    const env: NodeJS.ProcessEnv = {};
+
+    const loaded = await loadConfig({ path: configPath, env });
+
+    expect(loaded.config).toEqual({ value: 'first line\nsecond line # literal' });
+    expect(env).toEqual({
+      [key]: 'first line\nsecond line # literal',
+      EMPTY: '',
+      QUOTED: '  spaced # value  ',
+      PLAIN: 'value',
+      LITERAL: '${PLAIN}'
+    });
+    expect(process.env[key]).toBe(original);
+  });
+
+  it('preserves empty environment values and fills undefined ones', async () => {
+    const root = await tempDirectory();
+    const configPath = join(root, 'config.toml');
+    await writeFile(join(root, '.env'), 'EMPTY=from-file\nUNSET=from-file\n');
+    await writeFile(configPath, 'empty = "${EMPTY}"\nunset = "${UNSET}"\n');
+    const env: NodeJS.ProcessEnv = { EMPTY: '', UNSET: undefined };
+
+    const loaded = await loadConfig({ path: configPath, env });
+
+    expect(loaded.config).toEqual({ empty: '', unset: 'from-file' });
+    expect(env).toEqual({ EMPTY: '', UNSET: 'from-file' });
   });
 
   it('tracks encoded and URL-normalized forms of referenced environment values', async () => {

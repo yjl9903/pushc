@@ -22,7 +22,9 @@ Use first principles: clarify the real problem, make the smallest sufficient beh
 
 ## Build, Test, and Development Commands
 
-Use Node.js 24+ and the pinned pnpm version.
+Use the Node.js and pnpm versions pinned in `mise.toml`. Run `mise install`, then
+`mise exec -- pnpm <command>` (or activate mise in your shell). Keep `packageManager`
+in sync with the pnpm pin. Published Node.js packages support Node.js 24+.
 
 - `pnpm install`: install dependencies.
 - `pnpm build`: build all workspaces.
