@@ -54,7 +54,8 @@ attachments, read the selected adapter's reference.
 Send a basic message:
 
 ```bash
-pushc send --target alerts:release "Build completed"
+pushc send "Build completed" \
+  --target alerts:release
 ```
 
 Pass `--target <adapter[:target]>` unless a structured message file supplies its default target.
@@ -64,7 +65,9 @@ that adapter's default target and does not select its sole named target.
 Add `--title` when the configured destination uses a title. Do not use titles to pass secrets:
 
 ```bash
-pushc send --target alerts:release --title "Build completed" "Production deployment succeeded"
+pushc send "Production deployment succeeded" \
+  --target alerts:release \
+  --title "Build completed"
 ```
 
 Add string extension parameters with `--param key=value` when the configured destination uses them.
@@ -72,7 +75,8 @@ These override matching params in a structured message file. Supply multiple ent
 repeat the option. Put message text before multi-value options, and do not use params to pass secrets:
 
 ```bash
-pushc send "Production deployment succeeded" --target alerts:release \
+pushc send "Production deployment succeeded" \
+  --target alerts:release \
   --param group=deployments \
   --param level=active
 ```
@@ -81,7 +85,8 @@ When the selected destination supports attachments, pass sources with `--attachm
 It accepts multiple sources and can be repeated:
 
 ```bash
-pushc send "Build completed" --target alerts:release \
+pushc send "Build completed" \
+  --target alerts:release \
   --attachment <first-source> \
   --attachment <second-source>
 ```
@@ -92,7 +97,9 @@ supplied or explicitly selected.
 Add `--dry-run` when the user asks to preview or validate a send:
 
 ```bash
-pushc send --target alerts:release --dry-run "Build completed"
+pushc send "Build completed" \
+  --target alerts:release \
+  --dry-run
 ```
 
 A successful dry-run means the send was prepared, not performed. Attachment preparation follows the
@@ -109,7 +116,8 @@ Review the deployment log before closing the release.
 ```
 
 ```bash
-pushc send --target alerts:release \
+pushc send \
+  --target alerts:release \
   --title "Build completed" \
   --param environment=production \
   --attachment ./report.pdf \
@@ -125,7 +133,8 @@ ordering and attachment metadata. Prefer direct CLI content and options for ordi
 Prefer JSON when creating a structured message file:
 
 ```bash
-pushc send --file ./message.json
+pushc send \
+  --file ./message.json
 ```
 
 Each structured file describes exactly one message. Use JSON ordered content so text and

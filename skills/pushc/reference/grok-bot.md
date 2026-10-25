@@ -56,7 +56,11 @@ Valid message content is still required even when a custom body does not referen
 ## Send and interpret results
 
 ```bash
-pushc send "Review this build" --target grok --param event=build.completed --dry-run --json
+pushc send "Review this build" \
+  --target grok \
+  --param event=build.completed \
+  --dry-run \
+  --json
 ```
 
 Remove `--dry-run` only when the user intends to trigger the Routine. Dry-run makes no HTTP request.

@@ -48,11 +48,13 @@ qq:event.
 For example, when the 2nd anniversary Live merchandise preorder opens, the agent runs:
 
 ```bash
-pushc send --target qq:event "前橋ウィッチーズ 2 周年 Live 更新
+pushc send "前橋ウィッチーズ 2 周年 Live 更新
 - 商品事前通販已开始，8 月 2 日截止
-- https://x.com/maebashiwitches/status/2080578986950746216"
+- https://x.com/maebashiwitches/status/2080578986950746216" \
+  --target qq:event
 
-pushc send --target qq:event \
+pushc send \
+  --target qq:event \
   --attachment ./events/maebashi-witches/2026/assets/2nd-live-goods.jpg
 ```
 
@@ -116,7 +118,8 @@ NAPCAT_TOKEN=replace-with-your-napcat-token
 Pass short messages as arguments:
 
 ```bash
-pushc send "Production deployment succeeded" --target bark \
+pushc send "Production deployment succeeded" \
+  --target bark \
   --title "Build completed" \
   --param group=releases
 ```
@@ -124,8 +127,10 @@ pushc send "Production deployment succeeded" --target bark \
 Preview the request without sending it:
 
 ```bash
-pushc send "Production deployment succeeded" --target bark \
-  --dry-run --json \
+pushc send "Production deployment succeeded" \
+  --target bark \
+  --dry-run \
+  --json \
   --title "Build completed" \
   --param group=releases
 ```
@@ -133,7 +138,9 @@ pushc send "Production deployment succeeded" --target bark \
 Read a literal UTF-8 text file:
 
 ```bash
-pushc send --target qq:qq-group --file ./report.txt
+pushc send \
+  --target qq:qq-group \
+  --file ./report.txt
 ```
 
 JSON and TOML files can describe the target and ordered content:
@@ -156,7 +163,9 @@ source = "./report.pdf"
 ```
 
 ```bash
-pushc send --file ./message.toml --param group=releases
+pushc send \
+  --file ./message.toml \
+  --param group=releases
 ```
 
 CLI params override matching message-file params; `environment` remains `production`.
@@ -164,7 +173,8 @@ CLI params override matching message-file params; `environment` remains `product
 Send local or remote attachments:
 
 ```bash
-pushc send --target qq:qq-group \
+pushc send \
+  --target qq:qq-group \
   --attachment ./screenshot.png \
   --attachment https://example.com/report.pdf
 ```
@@ -174,7 +184,8 @@ Attachment support and source interpretation depend on the selected adapter.
 Or pipe it through stdin:
 
 ```bash
-git log -1 | pushc send --target bark
+git log -1 | pushc send \
+  --target bark
 ```
 
 List configured targets:

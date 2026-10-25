@@ -98,13 +98,16 @@ stdin. With no content source, at least one CLI attachment is required.
 Pass short text directly:
 
 ```bash
-pushc send --target alerts:release "Production deployment succeeded."
+pushc send "Production deployment succeeded." \
+  --target alerts:release
 ```
 
 Use a `.txt` file when whitespace and line breaks must be preserved:
 
 ```bash
-pushc send --target alerts:release --file ./message.txt
+pushc send \
+  --target alerts:release \
+  --file ./message.txt
 ```
 
 A `.txt` file is always literal text, even if its contents look like JSON or TOML. Plain-text file
@@ -114,7 +117,8 @@ message requires at least one attachment.
 Literal text can be combined with `--title`, `--param`, and `--attachment`:
 
 ```bash
-pushc send --target alerts:release \
+pushc send \
+  --target alerts:release \
   --title "Build completed" \
   --param environment=production \
   --attachment ./report.pdf \
@@ -162,7 +166,8 @@ JSON is the primary structured format:
 Send it with:
 
 ```bash
-pushc send --file ./message.json
+pushc send \
+  --file ./message.json
 ```
 
 Structured JSON can also be read from stdin.

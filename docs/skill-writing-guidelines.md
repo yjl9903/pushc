@@ -177,7 +177,8 @@ stdin 支持可以说明，但示例应来自真正的 pipe 场景，而不是�
 `--param` 与 `--attachment` 可重复，也可一次提供多个值。消息正文必须放在这些多值 option 前：
 
 ```bash
-pushc send "Build completed" --target qq:ops \
+pushc send "Build completed" \
+  --target qq:ops \
   --param group=deployments \
   --param environment=production \
   --attachment ./first.pdf \
