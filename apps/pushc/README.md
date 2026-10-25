@@ -82,6 +82,11 @@ level = "active"
 [adapters.bark.response.body]
 "/code" = { equals = 200 }
 
+[adapters.grok]
+type = "grok-bot"
+url = "${GROK_BOT_WEBHOOK_URL}"
+key = "${GROK_BOT_WEBHOOK_KEY}"
+
 [adapters.qq]
 type = "napcat"
 base_url = "ws://127.0.0.1:3001"
@@ -99,6 +104,9 @@ Example `.pushc/.env`:
 
 ```dotenv
 BARK_DEVICE_KEY=replace-with-your-bark-device-key
+
+GROK_BOT_WEBHOOK_URL=replace-with-your-routine-webhook-url
+GROK_BOT_WEBHOOK_KEY=replace-with-your-routine-webhook-key
 
 NAPCAT_TOKEN=replace-with-your-napcat-token
 ```
