@@ -40,6 +40,8 @@ jobs:
 
       - name: Setup toolchain
         uses: jdx/mise-action@v5.2.3
+        with:
+          install: false
 
       - name: Rebase deps and refresh the lockfile
         shell: bash
@@ -104,8 +106,10 @@ jobs:
               rebase_with_main_winning
             fi
 
+            # Install the toolchain selected by the rebased configuration.
+            mise install node pnpm
             # CI defaults to a frozen lockfile, so explicitly allow regeneration.
-            pnpm install --no-frozen-lockfile
+            mise exec -- pnpm install --no-frozen-lockfile
 
             if ! git diff --quiet -- . ':(exclude)pnpm-lock.yaml'; then
               echo "::error::pnpm install changed files other than pnpm-lock.yaml."
