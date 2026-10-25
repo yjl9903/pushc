@@ -244,23 +244,28 @@ Positional content is always literal text and is never inspected as JSON or TOML
 
 `--title` supplies the optional public title field.
 
-`--param key=value` may be repeated and supplies a flat string map. Repeat the complete option for
-every entry:
+`--param <...entry>` supplies a flat string map. Pass multiple `key=value` entries together or
+repeat the option:
 
 ```bash
 --param key1=value --param key2=value --param key3=value
+--param key1=value key2=value key3=value
 ```
+
+Put positional message text before `--param` and `--attachment`: these options read values until
+the next option. The `--param=key=value` form consumes only that one value.
 
 Each entry is split at its first `=`; an empty value is valid, additional `=` characters belong to
 the value, and key/value are not trimmed. Keys match `[A-Za-z0-9][A-Za-z0-9_.-]*` and are
 case-sensitive. Missing `=`, invalid/empty keys, and duplicate keys fail with `CLI_USAGE`. Title and
 params are not credential channels.
 
-`-a, --attachment <source>` may be repeated and preserves source strings, order, and duplicates.
-Repeat the complete option for every source:
+`-a, --attachment <...source>` accepts multiple sources, may be repeated, and preserves source
+strings, order, and duplicates:
 
 ```bash
 --attachment <first-source> --attachment <second-source>
+--attachment <first-source> <second-source>
 ```
 
 The selected adapter decides whether attachments are supported, which source formats are valid, how

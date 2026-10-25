@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breadc } from 'breadc';
+import { breadc, DefinitionError, ErrorCode } from 'breadc';
 import { PushError } from '@pushc/core';
 import {
   CliError,
@@ -12,6 +12,16 @@ import {
 } from '../src/error.js';
 
 describe('CLI errors', () => {
+  it('keeps invalid CLI definitions distinct from user input errors', () => {
+    const error = new DefinitionError(ErrorCode.INVALID_OPTION_SPEC, 'Invalid option definition');
+
+    expect(normalizeError(error)).toEqual({
+      code: 'INTERNAL_ERROR',
+      message: 'Invalid option definition'
+    });
+    expect(getErrorExitCode(error)).toBe(1);
+  });
+
   it('preserves the full Breadc context and original cause', () => {
     const cli = breadc('test').option('--json');
     cli.command('send');

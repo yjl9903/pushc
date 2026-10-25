@@ -107,20 +107,18 @@ NAPCAT_TOKEN=replace-with-your-napcat-token
 Pass short messages as arguments:
 
 ```bash
-pushc send --target bark \
+pushc send "Production deployment succeeded" --target bark \
   --title "Build completed" \
-  --param group=releases \
-  "Production deployment succeeded"
+  --param group=releases
 ```
 
 Preview the request without sending it:
 
 ```bash
-pushc send --target bark \
+pushc send "Production deployment succeeded" --target bark \
   --dry-run --json \
   --title "Build completed" \
-  --param group=releases \
-  "Production deployment succeeded"
+  --param group=releases
 ```
 
 Read a literal UTF-8 text file:
@@ -175,6 +173,9 @@ List configured targets:
 ```bash
 pushc targets
 ```
+
+Use `pushc --help`, `pushc send --help`, or `pushc targets --help` for usage and examples.
+Put message text before `--param` and `--attachment`, which accept multiple values.
 
 ## Use as a library
 

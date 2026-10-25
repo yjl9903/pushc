@@ -19,12 +19,27 @@ app 层读取 TOML、由运行时加载相邻 `.env` 并递归展开 `${ENV_NAME
 首次真实发送中惰性获取。`targets` 只解析配置并列出 destination；不构造 webhook request，也
 不建立 NapCat 连接或发送测试消息。
 
+## 命令解析与帮助
+
+CLI 使用 `breadc 1.0.0-beta.23`。根 description 提供用途和入门示例；
+命令使用 `summary`、`text`、`examples` 分别提供列表摘要、简短用途说明和可复制的 shell 示例。
+配置查找、选项取值、覆盖关系及使用限制放在对应 option 的 help 中，避免在命令 description 重复。
+示例统一目标、消息场景与参数顺序，直接发送采用正文在前、选项在后的写法。
+`send` 的位置参数通过 `.argument('[...content]', description)` 注册，使帮助同时列出用法与
+参数说明。帮助围绕消息来源、目标选择、覆盖参数、附件和预览发送，不展开内部实现。
+根命令无参数与各级 `--help` 均由 breadc 输出帮助，不加载配置或执行发送。
+
+采用新版严格解析：未知选项、重复单值选项、缺少选项值和多余位置参数等为 `InputError`，
+归一化为 `CLI_USAGE`、exit 2；其 context 中的 `--json` 决定错误输出格式。
+声明错误及框架内部错误为 `INTERNAL_ERROR`、exit 1。业务错误继续通过 `CliError` 携带
+context 和脱敏信息。不保留旧版宽松解析兼容层。
+
 ## `pushc send`
 
 ```text
-pushc send --target adapter[:target] \
-  [--title <title>] [--param key=value] [--attachment <source>] \
-  [--dry-run] [--file <path> | ...content]
+pushc send [...content] --target adapter[:target] \
+  [--title <title>] [--param <...entry>] [--attachment <...source>] \
+  [--dry-run] [--file <path>]
 ```
 
 CLI 将位置参数、`--file` 或 stdin 解析成
@@ -62,7 +77,10 @@ base path。它仍完成配置、target、payload 和 adapter 本地 preparation
 目标服务交互。结果固定包含 `dryRun: true`；`success` 只表示 request 是否准备成功。正常
 send 结果不增加 dryRun 字段。
 
-`--param key=value` 可重复出现，每个 entry 都必须完整重复一次 option。每项按第一个 `=`
+`--param <...entry>` 和 `--attachment <...source>` 可重复出现，也可在一次 option 后提供多个值；
+每次读取到下一个 option 或 `--` 为止。因此位置消息正文放在这些多值 option 之前；
+`--param=key=value` 等等号形式只消费当前值。`--` 后的值按 breadc passthrough 处理，
+不作为消息正文。每个 param entry 按第一个 `=`
 分隔，key/value 不 trim；value 可以为空或包含更多 `=`。key 必须匹配
 `[A-Za-z0-9][A-Za-z0-9_.-]*`，同一次发送中按大小写敏感规则拒绝重复 key。缺少 `=`、空/非法
 key 或重复 key 为 `CLI_USAGE`，exit 2。param 只产生一层 string Map，不解析 JSON 或创建
@@ -93,4 +111,5 @@ receipt。未被配置引用的环境变量不参与扫描。destination 展示�
 测试覆盖配置发现与展开、adapter lifecycle、JSON/TOML/text 后缀与 stdin 探测、syntax
 fallback/schema no-fallback、消息来源、`--title`/`--param` parsing、CLI/core normalize
 边界、core destination 委托、dry-run 无网络边界、targets 无发送边界、text/JSON output 和
-exit status。
+exit status。CLI smoke tests 同时覆盖严格解析的 text/JSON 错误，以及
+重复、多值、等号与短选项形式的参数解析。

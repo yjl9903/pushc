@@ -68,24 +68,22 @@ pushc send --target alerts:release --title "Build completed" "Production deploym
 ```
 
 Add string extension parameters with `--param key=value` when the configured destination uses them.
-These override matching params in a structured message file. Repeat the complete option for every
-entry, and do not use params to pass secrets:
+These override matching params in a structured message file. Supply multiple entries together or
+repeat the option. Put message text before multi-value options, and do not use params to pass secrets:
 
 ```bash
-pushc send --target alerts:release \
+pushc send "Production deployment succeeded" --target alerts:release \
   --param group=deployments \
-  --param level=active \
-  "Production deployment succeeded"
+  --param level=active
 ```
 
-When the selected destination supports attachments, repeat the complete `--attachment <source>`
-option for every source:
+When the selected destination supports attachments, pass sources with `--attachment`.
+It accepts multiple sources and can be repeated:
 
 ```bash
-pushc send --target alerts:release \
+pushc send "Build completed" --target alerts:release \
   --attachment <first-source> \
-  --attachment <second-source> \
-  "Build completed"
+  --attachment <second-source>
 ```
 
 Do not place credentials in attachment URLs or invent attachment paths; use only sources the user

@@ -172,20 +172,19 @@ Agent 需要知道输入、输出、约束和副作用，不需要知道内部�
 
 stdin 支持可以说明，但示例应来自真正的 pipe 场景，而不是把现有文件再经 `cat` 转发。
 
-### 参数重复必须完整
+### 多值参数与正文位置
 
-可重复 option 的示例必须重复完整 option：
+`--param` 与 `--attachment` 可重复，也可一次提供多个值。消息正文必须放在这些多值 option 前：
 
 ```bash
-pushc send \
+pushc send "Build completed" --target qq:ops \
   --param group=deployments \
   --param environment=production \
   --attachment ./first.pdf \
-  --attachment ./second.pdf \
-  "Build completed"
+  --attachment ./second.pdf
 ```
 
-不要写成看似一个 option 后跟多个裸值的形式。
+不要把正文紧跟在多值 option 的值之后，否则它会被解析为另一个参数或附件。
 
 ## 5. 消息文件规则
 

@@ -1,5 +1,6 @@
+import { InputError, type Context } from 'breadc';
+
 import { PushError, type PushDryRunResult, type PushResult } from '@pushc/core';
-import { BreadcError, type Breadc } from 'breadc';
 
 import { redactForOutput } from './utils/redact.js';
 
@@ -48,7 +49,7 @@ export interface CliFailure {
   exitCode: number;
 }
 
-export type CliContext = ReturnType<Breadc['parse']>['context'];
+export type CliContext = Context;
 
 export class CliError extends Error {
   readonly ctx: CliContext;
@@ -71,7 +72,9 @@ export function unwrapCliError(error: unknown): unknown {
 }
 
 export function isJsonCliError(error: unknown): boolean {
-  return error instanceof CliError && error.ctx.options.get('json')?.value() === true;
+  const ctx =
+    error instanceof CliError ? error.ctx : error instanceof InputError ? error.context : undefined;
+  return ctx?.options.get('json')?.value() === true;
 }
 
 export function normalizeError(error: unknown): NormalizedError {
@@ -83,7 +86,7 @@ export function normalizeError(error: unknown): NormalizedError {
   ) {
     return { code: error.code, message: error.message };
   }
-  if (error instanceof BreadcError) {
+  if (error instanceof InputError) {
     return { code: 'CLI_USAGE', message: error.message };
   }
   return {

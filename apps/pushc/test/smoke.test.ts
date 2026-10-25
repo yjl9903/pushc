@@ -10,6 +10,35 @@ import { describe, expect, it } from 'vitest';
 import packageJson from '../package.json' with { type: 'json' };
 
 describe('built CLI', () => {
+  it.each([
+    ['send', 'message', '--unknown'],
+    ['send', 'message', '--target'],
+    ['send', 'message', '--param'],
+    ['send', 'message', '--attachment'],
+    ['send', 'message', '--target', 'one', '--target', 'two'],
+    ['send', 'message', '--dry-run=invalid'],
+    ['targets', 'unexpected']
+  ])('reports invalid arguments as CLI_USAGE: %s %s %s', (...args) => {
+    const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+    for (const json of [false, true]) {
+      const result = spawnSync(process.execPath, [cli, ...args, ...(json ? ['--json'] : [])], {
+        encoding: 'utf8',
+        timeout: 5000
+      });
+
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe('');
+      if (json) {
+        expect(JSON.parse(result.stderr)).toEqual({
+          success: false,
+          error: { code: 'CLI_USAGE', message: expect.any(String) }
+        });
+      } else {
+        expect(result.stderr).toMatch(/^Error: /);
+      }
+    }
+  });
+
   it('is executable by Node and reports its version', () => {
     const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
     const result = spawnSync(process.execPath, [cli, '--version'], { encoding: 'utf8' });
@@ -75,7 +104,12 @@ describe('built CLI', () => {
     `);
   });
 
-  it('returns a redacted final request without sending it', async () => {
+  it.each([
+    { params: ['--param', 'group=releases', '--param', 'environment=production'] },
+    { params: ['--param', 'group=releases', 'environment=production'] },
+    { params: ['--param=group=releases', '--param=environment=production'] },
+    { params: ['-p', 'group=releases', 'environment=production'] }
+  ])('prepares a redacted request with parameters: $params', async ({ params }) => {
     const root = await mkdtemp(join(tmpdir(), 'pushc-dry-run-'));
     const config = join(root, 'config.toml');
     await writeFile(
@@ -91,7 +125,8 @@ describe('built CLI', () => {
         '[adapters.webhook.request.body]',
         'message = "{{message}}"',
         'title = "{{title:-pushc}}"',
-        'group = "{{param.group:-default}}"'
+        'group = "{{param.group:-default}}"',
+        'environment = "{{param.environment}}"'
       ].join('\n')
     );
 
@@ -107,8 +142,7 @@ describe('built CLI', () => {
           'webhook',
           '--title',
           '',
-          '--param',
-          'group=releases',
+          ...params,
           '--dry-run',
           '--config',
           config,
@@ -139,7 +173,8 @@ describe('built CLI', () => {
             body: {
               message: 'build complete',
               title: 'pushc',
-              group: 'releases'
+              group: 'releases',
+              environment: 'production'
             }
           }
         }
@@ -459,76 +494,79 @@ describe('built CLI', () => {
     }
   });
 
-  it('prepares repeatable local and remote attachments without sending to NapCat', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'pushc-attachment-dry-run-'));
-    const config = join(root, 'config.toml');
-    const image = join(root, 'photo.png');
-    const document = join(root, 'report.txt');
-    await writeFile(
-      config,
-      [
-        '[adapters.qq]',
-        'type = "napcat"',
-        'base_url = "ws://127.0.0.1:1"',
-        '[adapters.qq.targets.ops]',
-        'group_id = "123"'
-      ].join('\n')
-    );
-    await writeFile(image, 'image');
-    await writeFile(document, 'report');
-
-    try {
-      const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
-      const result = spawnSync(
-        process.execPath,
+  it.each(['repeated', 'grouped'])(
+    'prepares %s local and remote attachments without sending to NapCat',
+    async (style) => {
+      const root = await mkdtemp(join(tmpdir(), 'pushc-attachment-dry-run-'));
+      const config = join(root, 'config.toml');
+      const image = join(root, 'photo.png');
+      const document = join(root, 'report.txt');
+      await writeFile(
+        config,
         [
-          cli,
-          'send',
-          '--target',
-          'qq:ops',
-          '--attachment',
-          image,
-          '--attachment',
-          document,
-          '--attachment',
-          'https://cdn.example.com/clip.mp4?token=secret',
-          '--dry-run',
-          '--config',
-          config,
-          '--json'
-        ],
-        { encoding: 'utf8' }
+          '[adapters.qq]',
+          'type = "napcat"',
+          'base_url = "ws://127.0.0.1:1"',
+          '[adapters.qq.targets.ops]',
+          'group_id = "123"'
+        ].join('\n')
       );
+      await writeFile(image, 'image');
+      await writeFile(document, 'report');
 
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe('');
-      expect(JSON.parse(result.stdout)).toEqual({
-        dryRun: true,
-        success: true,
-        adapter: 'qq',
-        target: 'ops',
-        receipt: {
-          request: {
-            method: 'send_msg',
-            params: {
-              group_id: 123,
-              message: [
-                attachmentReceipt('image', 'photo.png', 'image/png', 'image'),
-                attachmentReceipt('file', 'report.txt', 'text/plain', 'report'),
-                remoteAttachmentReceipt('video', 'clip.mp4', 'video/mp4', 'cdn.example.com'),
-                { type: 'text', data: { text: '' } }
-              ]
+      try {
+        const cli = fileURLToPath(new URL('../dist/cli.mjs', import.meta.url));
+        const result = spawnSync(
+          process.execPath,
+          [
+            cli,
+            'send',
+            '--target',
+            'qq:ops',
+            '--attachment',
+            image,
+            ...(style === 'repeated' ? ['--attachment'] : []),
+            document,
+            ...(style === 'repeated' ? ['--attachment'] : []),
+            'https://cdn.example.com/clip.mp4?token=secret',
+            '--dry-run',
+            '--config',
+            config,
+            '--json'
+          ],
+          { encoding: 'utf8' }
+        );
+
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe('');
+        expect(JSON.parse(result.stdout)).toEqual({
+          dryRun: true,
+          success: true,
+          adapter: 'qq',
+          target: 'ops',
+          receipt: {
+            request: {
+              method: 'send_msg',
+              params: {
+                group_id: 123,
+                message: [
+                  attachmentReceipt('image', 'photo.png', 'image/png', 'image'),
+                  attachmentReceipt('file', 'report.txt', 'text/plain', 'report'),
+                  remoteAttachmentReceipt('video', 'clip.mp4', 'video/mp4', 'cdn.example.com'),
+                  { type: 'text', data: { text: '' } }
+                ]
+              }
             }
           }
-        }
-      });
-      expect(result.stdout).not.toContain(root);
-      expect(result.stdout).not.toContain('base64://');
-      expect(result.stdout).not.toContain('token=secret');
-    } finally {
-      await rm(root, { recursive: true, force: true });
+        });
+        expect(result.stdout).not.toContain(root);
+        expect(result.stdout).not.toContain('base64://');
+        expect(result.stdout).not.toContain('token=secret');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
   it('registers the targets command at the executable entry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pushc-smoke-'));
