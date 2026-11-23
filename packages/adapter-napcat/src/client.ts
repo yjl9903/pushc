@@ -1,6 +1,8 @@
 import { NCWebsocket } from 'node-napcat-ts';
-import { NapCatError } from './error.js';
+
 import type { NapCatClient, NapCatClientOptions, NapCatConfig, NapCatFactory } from './types.js';
+
+import { NapCatError } from './error.js';
 
 export class NapCatConnection {
   readonly #config: NapCatConfig;

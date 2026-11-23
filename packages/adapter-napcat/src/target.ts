@@ -1,5 +1,6 @@
-import { NapCatError } from './error.js';
 import type { NapCatTargetConfig } from './types.js';
+
+import { NapCatError } from './error.js';
 
 const TARGET_FIELDS = new Set(['user_id', 'group_id']);
 

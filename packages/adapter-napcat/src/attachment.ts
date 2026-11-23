@@ -1,8 +1,7 @@
+import mime from 'mime';
 import { createHash } from 'node:crypto';
 import { open, type FileHandle } from 'node:fs/promises';
 import { basename, isAbsolute, posix, resolve } from 'node:path';
-
-import mime from 'mime';
 
 import {
   PushError,

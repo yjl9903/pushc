@@ -1,5 +1,6 @@
-import { NapCatError } from './error.js';
 import type { NapCatConfig } from './types.js';
+
+import { NapCatError } from './error.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
